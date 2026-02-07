@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2D5A27;
+  /* Leafy Green */
+  --color-brand-yellow: #FFD700;
+  /* Vibrant Yellow */
+  --color-brand-green: #2D5A27;
+  --color-brand-green-light: #3E7B37;
+  --color-brand-brown: #4A2C2A;
+  /* Kept for compatibility */
+  --color-brand-white: #FDFBF7;
+  --color-brand-accent: #3E7B37;
+  /* Green accent */
+  --color-background-light: #FFD700;
+  --color-background-dark: #101922;
+
+  --font-display: var(--font-public-sans);
+  --font-sans: var(--font-public-sans);
+}
+
+body {
+  font-family: var(--font-public-sans), sans-serif;
+  min-height: 100vh;
+}
