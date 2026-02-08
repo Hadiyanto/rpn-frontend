@@ -17,24 +17,59 @@ interface ReceiptData {
     total: number;
 }
 
+const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
+const CHARACTERISTIC_UUID = '00002af1-0000-1000-8000-00805f9b34fb';
+
+let cachedDevice: BluetoothDevice | null = null;
+let cachedCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
+
 export const printReceipt = async (data: ReceiptData) => {
     try {
-        //Request Bluetooth Device
-        const device = await navigator.bluetooth.requestDevice({
-            filters: [
-                { services: ['000018f0-0000-1000-8000-00805f9b34fb'] } // Standard UUID for POS Printers
-            ],
-            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
-        });
+        let characteristic = cachedCharacteristic;
 
-        if (!device || !device.gatt) {
-            throw new Error('Device not found or not supported.');
+        // Check if we have a valid connection
+        if (!cachedDevice || !cachedDevice.gatt?.connected || !characteristic) {
+
+            // If we have a stored device but it's disconnected, try to reconnect first
+            if (cachedDevice && !cachedDevice.gatt?.connected) {
+                try {
+                    const server = await cachedDevice.gatt!.connect();
+                    const service = await server.getPrimaryService(SERVICE_UUID);
+                    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+                    cachedCharacteristic = characteristic;
+                } catch (error) {
+                    console.warn("Reconnection failed, requesting device...", error);
+                    cachedDevice = null;
+                    cachedCharacteristic = null;
+                }
+            }
+
+            // If no valid device or reconnection failed, request new device
+            if (!cachedDevice || !cachedCharacteristic) {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { services: [SERVICE_UUID] }
+                    ],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                const server = await device.gatt!.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+                cachedDevice = device;
+                cachedCharacteristic = characteristic;
+
+                // Handle disconnection to clear cache
+                device.addEventListener('gattserverdisconnected', () => {
+                    console.log('Printer disconnected');
+                    // We keep cachedDevice to try reconnecting next time, but clear char?
+                    // Actually if it disconnects, next time we try to reconnect.
+                });
+            }
         }
 
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-        // Common characteristic for write
-        const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+        if (!characteristic) throw new Error("Failed to connect to printer");
 
         const encoder = new EscPosEncoder();
 
@@ -81,11 +116,6 @@ export const printReceipt = async (data: ReceiptData) => {
 
         for (const chunk of chunks) {
             await characteristic.writeValue(chunk);
-        }
-
-        // Disconnect after printing
-        if (device.gatt.connected) {
-            device.gatt.disconnect();
         }
 
         return true;
