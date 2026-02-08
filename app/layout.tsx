@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Public_Sans } from "next/font/google";
 import "./globals.css";
 
@@ -10,6 +10,11 @@ const publicSans = Public_Sans({
 export const metadata: Metadata = {
   title: "Raja Pisang Nugget",
   description: "Business Login Portal",
+  manifest: "/json/manifest.json",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#FBBF24",
 };
 
 export default function RootLayout({

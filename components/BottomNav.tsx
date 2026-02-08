@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LuChrome, LuReceipt, LuWallet, LuUser } from 'react-icons/lu';
+import { LuGalleryThumbnails, LuReceipt, LuWallet, LuUser } from 'react-icons/lu';
 
 export default function BottomNav() {
     const pathname = usePathname();
@@ -14,7 +14,7 @@ export default function BottomNav() {
             <nav className="fixed bottom-0 z-50 bg-white border-t-2 border-primary/10 w-full max-w-[480px]">
                 <div className="flex h-20 items-center justify-around w-full px-2">
                     <Link href="/" className={`flex flex-col items-center gap-1 ${isActive('/') ? 'text-primary' : 'text-primary/50'}`}>
-                        <LuChrome className="text-2xl" />
+                        <LuGalleryThumbnails className="text-2xl" />
                         <span className="text-[10px] font-bold uppercase">Beranda</span>
                     </Link>
                     <Link href="/sales" className={`flex flex-col items-center gap-1 ${isActive('/sales') ? 'text-primary' : 'text-primary/50'}`}>
