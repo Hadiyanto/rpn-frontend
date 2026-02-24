@@ -11,10 +11,13 @@ import {
     LuChevronDown,
     LuChevronUp,
     LuPrinter,
+    LuX,
+    LuPlus,
+    LuTrash2,
 } from 'react-icons/lu';
 // import BottomNav from '@/components/BottomNav';
 import { printOrder } from '@/utils/printer';
-import Link from 'next/link';
+
 
 interface OrderItem {
     id: number;
@@ -102,6 +105,63 @@ export default function OrdersPage() {
     const [activeDate, setActiveDate] = useState<string>(getTodayStr());
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [printingId, setPrintingId] = useState<number | null>(null);
+
+    // Bottom sheet state
+    const [showSheet, setShowSheet] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const emptyItem = () => ({ box_type: 'FULL' as 'FULL' | 'HALF', name: '', qty: 1 });
+    const [form, setForm] = useState({
+        customer_name: '',
+        pickup_date: getTodayStr(),
+        pickup_time: '11:00 - 16:00',
+        note: '',
+        pesanan: [emptyItem()],
+    });
+
+    const resetForm = () => setForm({
+        customer_name: '',
+        pickup_date: getTodayStr(),
+        pickup_time: '11:00 - 16:00',
+        note: '',
+        pesanan: [emptyItem()],
+    });
+
+    const submitOrder = async () => {
+        if (!form.customer_name.trim()) { alert('Nama customer wajib diisi'); return; }
+        if (!form.pickup_date) { alert('Tanggal pickup wajib diisi'); return; }
+        if (form.pesanan.some(p => !p.name.trim())) { alert('Nama pesanan tidak boleh kosong'); return; }
+        setSubmitting(true);
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+            const res = await fetch(`${apiUrl}/api/order`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customer_name: form.customer_name.trim(),
+                    pickup_date: form.pickup_date,
+                    pickup_time: form.pickup_time.trim() || null,
+                    note: form.note.trim() || null,
+                    pesanan: form.pesanan.map(p => ({ box_type: p.box_type, name: p.name.trim(), qty: p.qty })),
+                }),
+            });
+            const json = await res.json();
+            if (json.status === 'ok') {
+                // Refresh orders
+                const res2 = await fetch(`${apiUrl}/api/orders`);
+                const json2 = await res2.json();
+                if (json2.status === 'ok') setOrders(json2.data);
+                setShowSheet(false);
+                resetForm();
+            } else {
+                alert(json.message || 'Gagal submit order');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Gagal submit order');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     useEffect(() => {
         const fetchOrders = async () => {
@@ -321,12 +381,148 @@ export default function OrdersPage() {
                 </main>
 
                 {/* FAB */}
-                <Link
-                    href="/orders/new"
-                    className="fixed bottom-24 right-6 w-14 h-14 bg-primary text-brand-yellow rounded-2xl shadow-xl flex items-center justify-center active:scale-90 transition-transform z-40"
+                <button
+                    onClick={() => { resetForm(); setShowSheet(true); }}
+                    className="fixed bottom-8 right-6 w-14 h-14 bg-primary text-brand-yellow rounded-2xl shadow-xl flex items-center justify-center active:scale-90 transition-transform z-40"
                 >
-                    <span className="text-2xl font-black leading-none">+</span>
-                </Link>
+                    <LuPlus className="text-2xl font-black" />
+                </button>
+
+                {/* Bottom Sheet */}
+                {showSheet && (
+                    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+                        {/* Backdrop */}
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowSheet(false)} />
+
+                        {/* Sheet */}
+                        <div className="relative bg-white rounded-t-3xl max-h-[90vh] flex flex-col w-full max-w-[480px] mx-auto shadow-2xl">
+                            {/* Handle */}
+                            <div className="flex justify-center pt-3 pb-1">
+                                <div className="w-10 h-1 bg-primary/20 rounded-full" />
+                            </div>
+
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-5 py-3 border-b border-primary/10">
+                                <h2 className="text-base font-extrabold text-primary">Order Baru</h2>
+                                <button onClick={() => setShowSheet(false)} className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10">
+                                    <LuX className="text-primary text-sm" />
+                                </button>
+                            </div>
+
+                            {/* Form */}
+                            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+                                {/* Customer Name */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nama Customer *</label>
+                                    <input
+                                        className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                                        placeholder="Nama pemesan"
+                                        value={form.customer_name}
+                                        onChange={e => setForm(f => ({ ...f, customer_name: e.target.value }))}
+                                    />
+                                </div>
+
+                                {/* Pickup Date & Time */}
+                                <div className="flex gap-3">
+                                    <div className="flex-1 space-y-1.5">
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pickup *</label>
+                                        <input
+                                            type="date"
+                                            className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                                            value={form.pickup_date}
+                                            onChange={e => setForm(f => ({ ...f, pickup_date: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="w-36 space-y-1.5">
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu</label>
+                                        <input
+                                            className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                                            placeholder="11:00 - 16:00"
+                                            value={form.pickup_time}
+                                            onChange={e => setForm(f => ({ ...f, pickup_time: e.target.value }))}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Pesanan */}
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Pesanan *</label>
+                                        <button
+                                            onClick={() => setForm(f => ({ ...f, pesanan: [...f.pesanan, emptyItem()] }))}
+                                            className="flex items-center gap-1 text-[10px] font-black text-primary bg-primary/10 px-3 py-1.5 rounded-full"
+                                        >
+                                            <LuPlus className="text-xs" /> Tambah Item
+                                        </button>
+                                    </div>
+                                    {form.pesanan.map((item, idx) => (
+                                        <div key={idx} className="bg-primary/5 rounded-2xl p-3 space-y-2">
+                                            <div className="flex gap-2">
+                                                {/* Box Type */}
+                                                <div className="flex rounded-xl overflow-hidden border-2 border-primary/10">
+                                                    {(['FULL', 'HALF'] as const).map(bt => (
+                                                        <button
+                                                            key={bt}
+                                                            onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, box_type: bt } : p) }))}
+                                                            className={`px-3 py-2 text-[10px] font-black uppercase transition-all ${item.box_type === bt ? 'bg-primary text-brand-yellow' : 'text-primary/50'
+                                                                }`}
+                                                        >{bt}</button>
+                                                    ))}
+                                                </div>
+                                                {/* Qty */}
+                                                <div className="flex items-center gap-2 bg-white rounded-xl border-2 border-primary/10 px-3">
+                                                    <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: Math.max(1, p.qty - 1) } : p) }))} className="text-primary font-black text-lg">−</button>
+                                                    <span className="text-sm font-black text-primary w-5 text-center">{item.qty}</span>
+                                                    <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: p.qty + 1 } : p) }))} className="text-primary font-black text-lg">+</button>
+                                                </div>
+                                                {/* Delete */}
+                                                {form.pesanan.length > 1 && (
+                                                    <button
+                                                        onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.filter((_, i) => i !== idx) }))}
+                                                        className="ml-auto w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 text-red-400"
+                                                    >
+                                                        <LuTrash2 className="text-sm" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {/* Item name */}
+                                            <input
+                                                className="w-full h-10 px-4 rounded-xl border-2 border-primary/10 bg-white text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                                                placeholder="Nama pesanan (contoh: Choco Kraft)"
+                                                value={item.name}
+                                                onChange={e => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: e.target.value } : p) }))}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Note */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Catatan (opsional)</label>
+                                    <textarea
+                                        rows={2}
+                                        className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none"
+                                        placeholder="Tambahan info..."
+                                        value={form.note}
+                                        onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Submit */}
+                            <div className="px-5 py-4 border-t border-primary/10">
+                                <button
+                                    onClick={submitOrder}
+                                    disabled={submitting}
+                                    className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-sm rounded-2xl shadow-lg active:scale-[0.98] transition-transform disabled:opacity-50 py-3"
+                                >
+                                    {submitting ? 'Menyimpan...' : 'Simpan Order'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* <BottomNav /> */}
             </div>
