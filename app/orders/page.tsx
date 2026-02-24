@@ -32,7 +32,9 @@ interface Order {
     items: OrderItem[];
 }
 
-const DAY_FILTERS = ['All', 'Rabu', 'Kamis', 'Jumat'];
+const DAY_ID: Record<number, string> = {
+    0: 'Minggu', 1: 'Senin', 2: 'Selasa', 3: 'Rabu', 4: 'Kamis', 5: 'Jumat', 6: 'Sabtu',
+};
 
 const STATUS_STYLES: Record<string, string> = {
     PENDING: 'bg-amber-100 text-amber-600',
@@ -48,9 +50,6 @@ const STATUS_LABEL: Record<string, string> = {
     CANCELLED: 'Cancelled',
 };
 
-const DAY_ID: Record<number, string> = {
-    0: 'MINGGU', 1: 'SENIN', 2: 'SELASA', 3: 'RABU', 4: 'KAMIS', 5: 'JUMAT', 6: 'SABTU',
-};
 
 function getInitials(name: string) {
     return name
@@ -76,14 +75,29 @@ function formatPickupDate(dateStr: string) {
     const date = new Date(dateStr);
     const day = DAY_ID[date.getDay()] ?? '';
     const formatted = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-    return `${day.charAt(0) + day.slice(1).toLowerCase()}, ${formatted}`;
+    return `${day}, ${formatted}`;
+}
+
+function formatChipDate(dateStr: string) {
+    const date = new Date(dateStr);
+    const day = DAY_ID[date.getDay()] ?? '';
+    const dd = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    return `${day} / ${dd}`;
+}
+
+function getTodayStr() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 }
 
 export default function OrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [activeDay, setActiveDay] = useState('All');
+    const [activeDate, setActiveDate] = useState<string>(getTodayStr());
     const [expandedId, setExpandedId] = useState<number | null>(null);
 
     useEffect(() => {
@@ -92,7 +106,15 @@ export default function OrdersPage() {
                 const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
                 const res = await fetch(`${apiUrl}/api/orders`);
                 const json = await res.json();
-                if (json.status === 'ok') setOrders(json.data);
+                if (json.status === 'ok') {
+                    const data = json.data as Order[];
+                    setOrders(data);
+                    const today = getTodayStr();
+                    const dates = Array.from(new Set(data.map(o => o.pickup_date)));
+                    const hasToday = dates.includes(today);
+                    if (hasToday) setActiveDate(today);
+                    // else: activeDate stays as today → filtered empty → shows "Belum ada order"
+                }
             } catch (err) {
                 console.error('Failed to fetch orders:', err);
             } finally {
@@ -102,17 +124,21 @@ export default function OrdersPage() {
         fetchOrders();
     }, []);
 
+    // Unique pickup dates from orders, sorted ASC
+    const uniqueDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort();
+
     const filtered = orders.filter((order) => {
         const matchSearch =
             order.customer_name.toLowerCase().includes(search.toLowerCase()) ||
             order.items.some((i) => i.name.toLowerCase().includes(search.toLowerCase()));
 
-        const matchDay =
-            activeDay === 'All'
-                ? true
-                : DAY_ID[new Date(order.pickup_date).getDay()] === activeDay.toUpperCase();
+        const matchDate = activeDate === 'All' ? true : order.pickup_date === activeDate;
 
-        return matchSearch && matchDay;
+        return matchSearch && matchDate;
+    }).sort((a, b) => {
+        const dateCompare = a.pickup_date.localeCompare(b.pickup_date);
+        if (dateCompare !== 0) return dateCompare;
+        return (a.pickup_time ?? '').localeCompare(b.pickup_time ?? '');
     });
 
     return (
@@ -140,18 +166,18 @@ export default function OrdersPage() {
                         />
                     </div>
 
-                    {/* Day filter pills */}
+                    {/* Date filter chips */}
                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                        {DAY_FILTERS.map((day) => (
+                        {uniqueDates.map((date) => (
                             <button
-                                key={day}
-                                onClick={() => setActiveDay(day)}
-                                className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeDay === day
+                                key={date}
+                                onClick={() => setActiveDate(date)}
+                                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeDate === date
                                     ? 'bg-primary text-brand-yellow shadow-md'
                                     : 'bg-white/60 text-primary/60 border border-primary/10'
                                     }`}
                             >
-                                {day === 'All' ? 'Semua' : day}
+                                {formatChipDate(date)}
                             </button>
                         ))}
                     </div>
