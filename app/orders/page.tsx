@@ -109,6 +109,30 @@ export default function OrdersPage() {
     const [activeDate, setActiveDate] = useState<string>(getTodayStr());
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [printingId, setPrintingId] = useState<number | null>(null);
+    const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
+
+    const handleStatusChange = async (orderId: number, newStatus: string) => {
+        setUpdatingStatusId(orderId);
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+            const res = await fetch(`${apiUrl}/api/order/${orderId}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+            const json = await res.json();
+            if (json.status === 'ok') {
+                // Update local state optimistically
+                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as Order['status'] } : o));
+            } else {
+                alert(json.message || 'Gagal update status');
+            }
+        } catch {
+            alert('Gagal update status');
+        } finally {
+            setUpdatingStatusId(null);
+        }
+    };
 
     // Bottom sheet state
     const [showSheet, setShowSheet] = useState(false);
@@ -288,9 +312,19 @@ export default function OrdersPage() {
                                                 </p>
                                             </div>
                                         </div>
-                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-500'}`}>
-                                            {STATUS_LABEL[order.status] ?? order.status}
-                                        </span>
+                                        <div className="relative border-2 border-current rounded-full" style={{ borderColor: 'currentColor', opacity: 0.8 }}>
+                                            <select
+                                                value={order.status}
+                                                disabled={updatingStatusId === order.id}
+                                                onChange={e => handleStatusChange(order.id, e.target.value)}
+                                                className={`appearance-none cursor-pointer pl-3 pr-6 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-0 focus:outline-none transition-opacity disabled:opacity-50 ${STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-500'}`}
+                                            >
+                                                {['PENDING', 'CONFIRMED', 'DONE', 'CANCELLED'].map(s => (
+                                                    <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
+                                                ))}
+                                            </select>
+                                            <LuChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" />
+                                        </div>
                                     </div>
 
                                     {/* Items summary */}
