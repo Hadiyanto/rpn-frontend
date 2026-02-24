@@ -177,24 +177,49 @@ export const printOrder = async (data: OrderReceiptData) => {
 
         const encoder = new EscPosEncoder();
 
+        // Manual center padding (32 chars = 58mm printer)
+        const W = 32;
+        const c = (text: string) => {
+            const pad = Math.max(0, Math.floor((W - text.length) / 2));
+            return ' '.repeat(pad) + text;
+        };
+
         let chain = encoder
             .initialize()
-            .align('center')
             .bold(true)
-            .line('Raja Pisang Nugget')
+            .line(c('Raja Pisang Nugget'))
             .bold(false)
-            .line('-- ORDER --')
-            .line('--------------------------------')
+            .line(c('-- ORDER --'))
             .align('left')
+            .line('--------------------------------')
             .line(`Nama  : ${data.customerName}`)
             .line(`Pickup: ${data.pickupDate}`)
             .line(`Waktu : ${data.pickupTime}`)
             .line(`Order#: #${data.orderId}`)
             .line('--------------------------------');
 
-        data.items.forEach(item => {
-            chain = chain.line(`${item.qty}x ${item.name} [${item.box_type}]`);
-        });
+
+        const fullItems = data.items.filter(i => i.box_type === 'FULL');
+        const halfItems = data.items.filter(i => i.box_type === 'HALF');
+
+        if (fullItems.length > 0) {
+            chain = chain.bold(true).line('[ FULL BOX ]').bold(false);
+            fullItems.forEach(item => {
+                chain = chain.line(`  ${item.qty}x ${item.name}`);
+            });
+            const totalFull = fullItems.reduce((s, i) => s + i.qty, 0);
+            chain = chain.line(`  Total: ${totalFull} box`);
+        }
+
+        if (halfItems.length > 0) {
+            if (fullItems.length > 0) chain = chain.line('');
+            chain = chain.bold(true).line('[ HALF BOX ]').bold(false);
+            halfItems.forEach(item => {
+                chain = chain.line(`  ${item.qty}x ${item.name}`);
+            });
+            const totalHalf = halfItems.reduce((s, i) => s + i.qty, 0);
+            chain = chain.line(`  Total: ${totalHalf} box`);
+        }
 
         chain = chain.line('--------------------------------');
 
@@ -204,8 +229,7 @@ export const printOrder = async (data: OrderReceiptData) => {
         }
 
         const encodedData = chain
-            .align('center')
-            .line('Terima Kasih!')
+            .line(c('Terima Kasih!'))
             .line('\n\n')
             .encode();
 
