@@ -98,6 +98,10 @@ function getTodayStr() {
     return `${y}-${m}-${d}`;
 }
 
+function toTitleCase(str: string) {
+    return str.replace(/\b\w/g, c => c.toUpperCase());
+}
+
 export default function OrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
@@ -418,8 +422,9 @@ export default function OrdersPage() {
                                     <input
                                         className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
                                         placeholder="Nama pemesan"
+                                        autoCapitalize="words"
                                         value={form.customer_name}
-                                        onChange={e => setForm(f => ({ ...f, customer_name: e.target.value }))}
+                                        onChange={e => setForm(f => ({ ...f, customer_name: toTitleCase(e.target.value) }))}
                                     />
                                 </div>
 
@@ -490,8 +495,9 @@ export default function OrdersPage() {
                                             <input
                                                 className="w-full h-10 px-4 rounded-xl border-2 border-primary/10 bg-white text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
                                                 placeholder="Nama pesanan (contoh: Choco Kraft)"
+                                                autoCapitalize="words"
                                                 value={item.name}
-                                                onChange={e => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: e.target.value } : p) }))}
+                                                onChange={e => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: toTitleCase(e.target.value) } : p) }))}
                                             />
                                         </div>
                                     ))}
