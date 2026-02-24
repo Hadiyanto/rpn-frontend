@@ -34,7 +34,7 @@ export default function LoginPage() {
       alert(error.message);
     } else {
       router.refresh();
-      router.push('/sales'); // Redirect to sales after login
+      router.push('/orders'); // Redirect to orders after login
     }
     setLoading(false);
   };

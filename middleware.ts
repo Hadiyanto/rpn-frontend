@@ -29,7 +29,15 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Auth redirects disabled — all routes accessible without login
+    void user;
+
+    // Redirect root to orders
+    if (request.nextUrl.pathname === '/') {
+        return NextResponse.redirect(new URL('/orders', request.url))
+    }
 
     return response
 }
