@@ -108,14 +108,14 @@ export const printReceipt = async (data: ReceiptData) => {
             .line('\n\n') // Feed
             .encode();
 
-        // Split into chunks of 512 bytes to avoid MTU limits
-        const chunks = [];
-        for (let i = 0; i < encodedData.length; i += 512) {
-            chunks.push(encodedData.slice(i, i + 512));
-        }
+        // BLE MTU is typically 20 bytes — send in small chunks with delay
+        const CHUNK_SIZE = 20;
+        const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-        for (const chunk of chunks) {
-            await characteristic.writeValue(chunk);
+        for (let i = 0; i < encodedData.length; i += CHUNK_SIZE) {
+            const chunk = encodedData.slice(i, i + CHUNK_SIZE);
+            await characteristic.writeValue(new Uint8Array((chunk as Uint8Array).buffer as ArrayBuffer));
+            await delay(30);
         }
 
         return true;
@@ -233,12 +233,14 @@ export const printOrder = async (data: OrderReceiptData) => {
             .line('\n\n')
             .encode();
 
-        const chunks: Uint8Array[] = [];
-        for (let i = 0; i < encodedData.length; i += 512) {
-            chunks.push(encodedData.slice(i, i + 512) as Uint8Array);
-        }
-        for (const chunk of chunks) {
+        // BLE MTU is typically 20 bytes — send in small chunks with delay
+        const CHUNK_SIZE = 20;
+        const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+        for (let i = 0; i < encodedData.length; i += CHUNK_SIZE) {
+            const chunk = encodedData.slice(i, i + CHUNK_SIZE);
             await characteristic.writeValue(new Uint8Array(chunk.buffer as ArrayBuffer));
+            await delay(50);
         }
 
         return true;
