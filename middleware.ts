@@ -31,12 +31,17 @@ export async function middleware(request: NextRequest) {
 
     const { data: { user } } = await supabase.auth.getUser()
 
-    // Auth redirects disabled — all routes accessible without login
-    void user;
+    const { pathname } = request.nextUrl;
+    const isPublic = pathname === '/';
 
-    // Redirect root to orders
-    if (request.nextUrl.pathname === '/') {
-        return NextResponse.redirect(new URL('/orders', request.url))
+    // Sudah login + akses halaman login → ke /orders
+    if (user && isPublic) {
+        return NextResponse.redirect(new URL('/orders', request.url));
+    }
+
+    // Belum login + akses route protected → ke /
+    if (!user && !isPublic) {
+        return NextResponse.redirect(new URL('/', request.url));
     }
 
     return response
