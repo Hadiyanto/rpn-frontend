@@ -10,8 +10,10 @@ import {
     LuStickyNote,
     LuChevronDown,
     LuChevronUp,
+    LuPrinter,
 } from 'react-icons/lu';
 // import BottomNav from '@/components/BottomNav';
+import { printOrder } from '@/utils/printer';
 import Link from 'next/link';
 
 interface OrderItem {
@@ -99,6 +101,7 @@ export default function OrdersPage() {
     const [search, setSearch] = useState('');
     const [activeDate, setActiveDate] = useState<string>(getTodayStr());
     const [expandedId, setExpandedId] = useState<number | null>(null);
+    const [printingId, setPrintingId] = useState<number | null>(null);
 
     useEffect(() => {
         const fetchOrders = async () => {
@@ -286,6 +289,30 @@ export default function OrdersPage() {
                                                 {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                                             </span>
                                         </div>
+                                        <button
+                                            onClick={async () => {
+                                                setPrintingId(order.id);
+                                                try {
+                                                    await printOrder({
+                                                        customerName: order.customer_name,
+                                                        pickupDate: formatPickupDate(order.pickup_date),
+                                                        pickupTime: order.pickup_time,
+                                                        note: order.note,
+                                                        orderId: order.id,
+                                                        items: order.items,
+                                                    });
+                                                } catch {
+                                                    alert('Gagal print. Pastikan Bluetooth aktif dan pilih printer yang benar.');
+                                                } finally {
+                                                    setPrintingId(null);
+                                                }
+                                            }}
+                                            disabled={printingId === order.id}
+                                            className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-brand-yellow text-xs font-black uppercase tracking-wider shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                                        >
+                                            <LuPrinter className="text-sm" />
+                                            {printingId === order.id ? 'Printing...' : 'Cetak Order'}
+                                        </button>
                                     </div>
                                 )}
                             </div>

@@ -125,3 +125,101 @@ export const printReceipt = async (data: ReceiptData) => {
         throw error;
     }
 };
+export interface OrderPrintItem {
+    box_type: 'FULL' | 'HALF';
+    name: string;
+    qty: number;
+}
+
+export interface OrderReceiptData {
+    customerName: string;
+    pickupDate: string;   // formatted string, e.g. "Rabu, 26 Februari 2026"
+    pickupTime: string;
+    note?: string | null;
+    orderId: number;
+    items: OrderPrintItem[];
+}
+
+export const printOrder = async (data: OrderReceiptData) => {
+    try {
+        let characteristic = cachedCharacteristic;
+
+        if (!cachedDevice || !cachedDevice.gatt?.connected || !characteristic) {
+            if (cachedDevice && !cachedDevice.gatt?.connected) {
+                try {
+                    const server = await cachedDevice.gatt!.connect();
+                    const service = await server.getPrimaryService(SERVICE_UUID);
+                    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+                    cachedCharacteristic = characteristic;
+                } catch {
+                    cachedDevice = null;
+                    cachedCharacteristic = null;
+                }
+            }
+
+            if (!cachedDevice || !cachedCharacteristic) {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [SERVICE_UUID] }],
+                    optionalServices: [SERVICE_UUID],
+                });
+                const server = await device.gatt!.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+                cachedDevice = device;
+                cachedCharacteristic = characteristic;
+                device.addEventListener('gattserverdisconnected', () => {
+                    console.log('Printer disconnected');
+                });
+            }
+        }
+
+        if (!characteristic) throw new Error('Failed to connect to printer');
+
+        const encoder = new EscPosEncoder();
+
+        let chain = encoder
+            .initialize()
+            .align('center')
+            .bold(true)
+            .line('Raja Pisang Nugget')
+            .bold(false)
+            .line('-- ORDER --')
+            .line('--------------------------------')
+            .align('left')
+            .line(`Nama  : ${data.customerName}`)
+            .line(`Pickup: ${data.pickupDate}`)
+            .line(`Waktu : ${data.pickupTime}`)
+            .line(`Order#: #${data.orderId}`)
+            .line('--------------------------------');
+
+        data.items.forEach(item => {
+            chain = chain.line(`${item.qty}x ${item.name} [${item.box_type}]`);
+        });
+
+        chain = chain.line('--------------------------------');
+
+        if (data.note) {
+            chain = chain.line(`Catatan: ${data.note}`);
+            chain = chain.line('--------------------------------');
+        }
+
+        const encodedData = chain
+            .align('center')
+            .line('Terima Kasih!')
+            .line('\n\n')
+            .encode();
+
+        const chunks: Uint8Array[] = [];
+        for (let i = 0; i < encodedData.length; i += 512) {
+            chunks.push(encodedData.slice(i, i + 512) as Uint8Array);
+        }
+        for (const chunk of chunks) {
+            await characteristic.writeValue(new Uint8Array(chunk.buffer as ArrayBuffer));
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Print order error:', error);
+        throw error;
+    }
+};
