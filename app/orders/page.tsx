@@ -74,16 +74,16 @@ function avatarColor(id: number) {
 }
 
 function formatPickupDate(dateStr: string) {
-    const date = new Date(dateStr);
+    const date = new Date(`${dateStr}T00:00:00+07:00`);
     const day = DAY_ID[date.getDay()] ?? '';
-    const formatted = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const formatted = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     return `${day}, ${formatted}`;
 }
 
 function formatChipDate(dateStr: string) {
-    const date = new Date(dateStr);
+    const date = new Date(`${dateStr}T00:00:00+07:00`);
     const day = DAY_ID[date.getDay()] ?? '';
-    const dd = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    const dd = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' });
     return `${day} / ${dd}`;
 }
 
@@ -286,7 +286,7 @@ export default function OrdersPage() {
                                         <div className="flex justify-between text-xs">
                                             <span className="text-primary/50">Dibuat</span>
                                             <span className="font-bold text-primary">
-                                                {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })}
                                             </span>
                                         </div>
                                         <button
