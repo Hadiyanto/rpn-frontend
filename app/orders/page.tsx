@@ -141,7 +141,7 @@ export default function OrdersPage() {
     const [form, setForm] = useState({
         customer_name: '',
         pickup_date: getTodayStr(),
-        pickup_time: '11:00 - 16:00',
+        pickup_time: '11:00',
         note: '',
         pesanan: [emptyItem()],
     });
@@ -149,7 +149,7 @@ export default function OrdersPage() {
     const resetForm = () => setForm({
         customer_name: '',
         pickup_date: getTodayStr(),
-        pickup_time: '11:00 - 16:00',
+        pickup_time: '11:00',
         note: '',
         pesanan: [emptyItem()],
     });
@@ -475,12 +475,33 @@ export default function OrdersPage() {
                                     </div>
                                     <div className="w-36 space-y-1.5">
                                         <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu</label>
-                                        <input
-                                            className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
-                                            placeholder="11:00 - 16:00"
-                                            value={form.pickup_time}
-                                            onChange={e => setForm(f => ({ ...f, pickup_time: e.target.value }))}
-                                        />
+                                        <div className="flex gap-1 h-11 rounded-xl border-2 border-primary/10 bg-primary/5 overflow-hidden">
+                                            <select
+                                                value={form.pickup_time.split(':')[0] ?? '11'}
+                                                onChange={e => {
+                                                    const mm = form.pickup_time.split(':')[1] ?? '00';
+                                                    setForm(f => ({ ...f, pickup_time: `${e.target.value}:${mm}` }));
+                                                }}
+                                                className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none"
+                                            >
+                                                {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
+                                                    <option key={h} value={h}>{h}</option>
+                                                ))}
+                                            </select>
+                                            <span className="flex items-center text-primary font-black text-sm">:</span>
+                                            <select
+                                                value={form.pickup_time.split(':')[1] ?? '00'}
+                                                onChange={e => {
+                                                    const hh = form.pickup_time.split(':')[0] ?? '11';
+                                                    setForm(f => ({ ...f, pickup_time: `${hh}:${e.target.value}` }));
+                                                }}
+                                                className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none"
+                                            >
+                                                {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => (
+                                                    <option key={m} value={m}>{m}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
 
