@@ -7,6 +7,7 @@ import {
     LuClipboardList,
     LuStar,
     LuTrendingUp,
+    LuChartBar,
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
 
@@ -45,6 +46,7 @@ export default function AnalyticsPage() {
     const [showSidebar, setShowSidebar] = useState(false);
     const [rangeStart, setRangeStart] = useState<string | null>(getTodayStr());
     const [rangeEnd, setRangeEnd] = useState<string | null>(null);
+    const [activeStatus, setActiveStatus] = useState<string>('ALL');
 
     useEffect(() => {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -78,8 +80,9 @@ export default function AnalyticsPage() {
     const availableDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort();
     const effectiveEnd = rangeEnd ?? rangeStart;
     const dayOrders = orders.filter(o => {
-        if (!rangeStart) return true;
-        return o.pickup_date >= rangeStart && o.pickup_date <= (effectiveEnd ?? rangeStart);
+        const matchDate = !rangeStart || (o.pickup_date >= rangeStart && o.pickup_date <= (effectiveEnd ?? rangeStart));
+        const matchStatus = activeStatus === 'ALL' || o.status === activeStatus;
+        return matchDate && matchStatus;
     });
     const totalOrders = dayOrders.length;
     const totalItems = dayOrders.reduce((s, o) => s + o.items.reduce((si, i) => si + i.qty, 0), 0);
@@ -104,6 +107,22 @@ export default function AnalyticsPage() {
 
     const fullBoxCount = dayOrders.reduce((s, o) => s + o.items.filter(i => i.box_type === 'FULL').reduce((si, i) => si + i.qty, 0), 0);
     const halfBoxCount = dayOrders.reduce((s, o) => s + o.items.filter(i => i.box_type === 'HALF').reduce((si, i) => si + i.qty, 0), 0);
+
+    // Chart: total orders per date — ikut filter status
+    const ordersByDate: Record<string, number> = {};
+    orders
+        .filter(o => activeStatus === 'ALL' || o.status === activeStatus)
+        .forEach(o => {
+            ordersByDate[o.pickup_date] = (ordersByDate[o.pickup_date] ?? 0) + 1;
+        });
+    const allDatesChart = Object.entries(ordersByDate).sort(([a], [b]) => a.localeCompare(b));
+    const maxDateCount = Math.max(...allDatesChart.map(([, c]) => c), 1);
+
+    function fmtChartDate(dateStr: string) {
+        const [y, m, d] = dateStr.split('-');
+        const date = new Date(Number(y), Number(m) - 1, Number(d));
+        return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    }
 
     return (
         <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
@@ -165,6 +184,36 @@ export default function AnalyticsPage() {
                         {!rangeEnd && rangeStart && (
                             <p className="text-[10px] text-primary/40 font-medium mt-2">Tap tanggal lain untuk set rentang akhir</p>
                         )}
+
+                        {/* Status filter chips */}
+                        <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                            {(['ALL', 'UNPAID', 'PAID', 'CONFIRMED', 'DONE'] as const).map(s => {
+                                const STATUS_STYLES: Record<string, string> = {
+                                    UNPAID: 'bg-orange-100 text-orange-600',
+                                    PAID: 'bg-teal-100 text-teal-600',
+                                    CONFIRMED: 'bg-green-100 text-green-600',
+                                    DONE: 'bg-blue-100 text-blue-600',
+                                };
+                                const STATUS_LABEL: Record<string, string> = {
+                                    ALL: 'Semua', UNPAID: 'Unpaid', PAID: 'Paid', CONFIRMED: 'Confirmed', DONE: 'Done',
+                                };
+                                const isActive = activeStatus === s;
+                                const chipStyle = isActive && s !== 'ALL'
+                                    ? STATUS_STYLES[s]
+                                    : isActive
+                                        ? 'bg-primary text-brand-yellow'
+                                        : 'bg-primary/10 text-primary/60 hover:bg-primary/20';
+                                return (
+                                    <button
+                                        key={s}
+                                        onClick={() => setActiveStatus(s)}
+                                        className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition-all ${chipStyle}`}
+                                    >
+                                        {STATUS_LABEL[s]}
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </section>
 
                     {loading ? (
@@ -175,6 +224,133 @@ export default function AnalyticsPage() {
                         </div>
                     ) : (
                         <>
+                            {/* Chart: Orders per Date — Line Chart */}
+                            {allDatesChart.length > 0 && (() => {
+                                const W = 400, H = 120, PAD_L = 8, PAD_R = 8, PAD_T = 24, PAD_B = 28;
+                                const chartW = W - PAD_L - PAD_R;
+                                const chartH = H - PAD_T - PAD_B;
+                                const n = allDatesChart.length;
+                                const effectiveEnd2 = rangeEnd ?? rangeStart;
+
+                                const pts = allDatesChart.map(([date, count], i) => {
+                                    const x = PAD_L + (n === 1 ? chartW / 2 : (i / (n - 1)) * chartW);
+                                    const y = PAD_T + chartH - (count / maxDateCount) * chartH;
+                                    const isInRange = rangeStart && effectiveEnd2
+                                        ? date >= rangeStart && date <= effectiveEnd2
+                                        : false;
+                                    const isPeak = count === maxDateCount;
+                                    return { x, y, date, count, isInRange, isPeak };
+                                });
+
+                                const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                                const areaPath = `${linePath} L${pts[pts.length - 1].x.toFixed(1)},${(PAD_T + chartH).toFixed(1)} L${pts[0].x.toFixed(1)},${(PAD_T + chartH).toFixed(1)} Z`;
+
+                                return (
+                                    <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <LuChartBar className="text-primary text-base" />
+                                            <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black">Total Order per Tanggal</p>
+                                        </div>
+                                        <svg
+                                            viewBox={`0 0 ${W} ${H}`}
+                                            className="w-full"
+                                            style={{ height: 140 }}
+                                        >
+                                            <defs>
+                                                <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="var(--color-primary, #1a1a1a)" stopOpacity="0.18" />
+                                                    <stop offset="100%" stopColor="var(--color-primary, #1a1a1a)" stopOpacity="0.01" />
+                                                </linearGradient>
+                                            </defs>
+
+                                            {/* Horizontal grid lines */}
+                                            {[0, 0.5, 1].map((t, i) => (
+                                                <line
+                                                    key={i}
+                                                    x1={PAD_L} y1={PAD_T + chartH - t * chartH}
+                                                    x2={W - PAD_R} y2={PAD_T + chartH - t * chartH}
+                                                    stroke="currentColor" strokeOpacity="0.06" strokeWidth="1"
+                                                />
+                                            ))}
+
+                                            {/* Area fill */}
+                                            <path d={areaPath} fill="url(#lineGrad)" />
+
+                                            {/* Line */}
+                                            <path
+                                                d={linePath}
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeOpacity="0.25"
+                                                strokeWidth="2"
+                                                strokeLinejoin="round"
+                                                strokeLinecap="round"
+                                            />
+
+                                            {/* Active segment overlay */}
+                                            {pts.length > 1 && (() => {
+                                                const activePts = pts.filter(p => p.isInRange);
+                                                if (activePts.length < 1) return null;
+                                                const activePath = activePts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                                                return (
+                                                    <path
+                                                        d={activePath}
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        strokeOpacity="0.9"
+                                                        strokeWidth="2.5"
+                                                        strokeLinejoin="round"
+                                                        strokeLinecap="round"
+                                                    />
+                                                );
+                                            })()}
+
+                                            {/* Dots & labels */}
+                                            {pts.map((p, i) => (
+                                                <g key={p.date} style={{ cursor: 'pointer' }} onClick={() => handleDateChip(p.date)}>
+                                                    {/* Peak badge */}
+                                                    {p.isPeak && (
+                                                        <text x={p.x} y={p.y - 12} textAnchor="middle" fontSize="9" fontWeight="800" fill="currentColor" fillOpacity="0.7">
+                                                            ★ {p.count}
+                                                        </text>
+                                                    )}
+                                                    {/* Outer ring for active */}
+                                                    {p.isInRange && (
+                                                        <circle cx={p.x} cy={p.y} r={7} fill="currentColor" fillOpacity="0.15" />
+                                                    )}
+                                                    {/* Dot */}
+                                                    <circle
+                                                        cx={p.x} cy={p.y} r={p.isInRange ? 4.5 : 3}
+                                                        fill={p.isInRange ? 'currentColor' : 'white'}
+                                                        stroke="currentColor"
+                                                        strokeOpacity={p.isInRange ? 1 : 0.35}
+                                                        strokeWidth="1.5"
+                                                    />
+                                                    {/* Count label above non-peak active dots */}
+                                                    {p.isInRange && !p.isPeak && (
+                                                        <text x={p.x} y={p.y - 9} textAnchor="middle" fontSize="8" fontWeight="800" fill="currentColor" fillOpacity="0.7">
+                                                            {p.count}
+                                                        </text>
+                                                    )}
+                                                    {/* X-axis date label */}
+                                                    {(n <= 10 || i % Math.ceil(n / 8) === 0 || i === n - 1) && (
+                                                        <text
+                                                            x={p.x} y={H - 4}
+                                                            textAnchor="middle"
+                                                            fontSize="7.5"
+                                                            fontWeight="700"
+                                                            fill="currentColor"
+                                                            fillOpacity={p.isInRange ? 0.8 : 0.35}
+                                                        >
+                                                            {fmtChartDate(p.date)}
+                                                        </text>
+                                                    )}
+                                                </g>
+                                            ))}
+                                        </svg>
+                                    </section>
+                                );
+                            })()}
                             {/* Summary Cards */}
                             <section className="grid grid-cols-2 gap-3">
                                 <div className="bg-white/60 p-5 rounded-2xl border border-primary/10">
