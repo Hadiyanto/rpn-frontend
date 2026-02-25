@@ -151,10 +151,10 @@ export default function AnalyticsPage() {
                                         key={date}
                                         onClick={() => handleDateChip(date)}
                                         className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition-all ${isStart || isEnd
-                                                ? 'bg-primary text-brand-yellow shadow-lg'
-                                                : inRange
-                                                    ? 'bg-primary/30 text-primary'
-                                                    : 'bg-primary/10 text-primary/60 hover:bg-primary/20'
+                                            ? 'bg-primary text-brand-yellow shadow-lg'
+                                            : inRange
+                                                ? 'bg-primary/30 text-primary'
+                                                : 'bg-primary/10 text-primary/60 hover:bg-primary/20'
                                             }`}
                                     >
                                         {label}
@@ -287,14 +287,14 @@ export default function AnalyticsPage() {
                             {/* Order Status Breakdown */}
                             <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
                                 <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black mb-4">Status Order</p>
-                                {(['PENDING', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(status => {
+                                {(['UNPAID', 'PAID', 'CONFIRMED', 'DONE'] as const).map(status => {
                                     const count = dayOrders.filter(o => o.status === status).length;
                                     const pct = totalOrders > 0 ? Math.round((count / totalOrders) * 100) : 0;
                                     const colors: Record<string, string> = {
-                                        PENDING: 'bg-amber-400',
+                                        UNPAID: 'bg-orange-400',
+                                        PAID: 'bg-teal-400',
                                         CONFIRMED: 'bg-emerald-500',
                                         DONE: 'bg-blue-400',
-                                        CANCELLED: 'bg-red-400',
                                     };
                                     if (count === 0) return null;
                                     return (

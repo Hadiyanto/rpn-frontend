@@ -34,7 +34,7 @@ interface Order {
     pickup_date: string;
     pickup_time: string;
     note: string | null;
-    status: 'ORDERED' | 'UNPAID' | 'PAID' | 'PENDING' | 'CONFIRMED' | 'DONE' | 'CANCELLED';
+    status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE';
     created_at: string;
     items: OrderItem[];
 }
@@ -44,23 +44,17 @@ const DAY_ID: Record<number, string> = {
 };
 
 const STATUS_STYLES: Record<string, string> = {
-    ORDERED: 'bg-purple-100 text-purple-600',
     UNPAID: 'bg-orange-100 text-orange-600',
     PAID: 'bg-teal-100 text-teal-600',
-    PENDING: 'bg-amber-100 text-amber-600',
     CONFIRMED: 'bg-green-100 text-green-600',
     DONE: 'bg-blue-100 text-blue-600',
-    CANCELLED: 'bg-red-100 text-red-500',
 };
 
 const STATUS_LABEL: Record<string, string> = {
-    ORDERED: 'Ordered',
     UNPAID: 'Unpaid',
     PAID: 'Paid',
-    PENDING: 'Pending',
     CONFIRMED: 'Confirmed',
     DONE: 'Done',
-    CANCELLED: 'Cancelled',
 };
 
 
@@ -335,7 +329,7 @@ export default function OrdersPage() {
                                                 onChange={e => handleStatusChange(order.id, e.target.value)}
                                                 className={`appearance-none cursor-pointer pl-3 pr-6 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-0 focus:outline-none transition-opacity disabled:opacity-50 ${STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-500'}`}
                                             >
-                                                {['ORDERED', 'UNPAID', 'PAID', 'PENDING', 'CONFIRMED', 'DONE', 'CANCELLED'].map(s => (
+                                                {['UNPAID', 'PAID', 'CONFIRMED', 'DONE'].map(s => (
                                                     <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
                                                 ))}
                                             </select>
