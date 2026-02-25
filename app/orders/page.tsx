@@ -14,9 +14,11 @@ import {
     LuX,
     LuPlus,
     LuTrash2,
+    LuMenu,
 } from 'react-icons/lu';
 // import BottomNav from '@/components/BottomNav';
 import { printOrder } from '@/utils/printer';
+import Sidebar from '@/components/Sidebar';
 
 
 interface OrderItem {
@@ -32,7 +34,7 @@ interface Order {
     pickup_date: string;
     pickup_time: string;
     note: string | null;
-    status: 'PENDING' | 'CONFIRMED' | 'DONE' | 'CANCELLED';
+    status: 'ORDERED' | 'UNPAID' | 'PAID' | 'PENDING' | 'CONFIRMED' | 'DONE' | 'CANCELLED';
     created_at: string;
     items: OrderItem[];
 }
@@ -42,6 +44,9 @@ const DAY_ID: Record<number, string> = {
 };
 
 const STATUS_STYLES: Record<string, string> = {
+    ORDERED: 'bg-purple-100 text-purple-600',
+    UNPAID: 'bg-orange-100 text-orange-600',
+    PAID: 'bg-teal-100 text-teal-600',
     PENDING: 'bg-amber-100 text-amber-600',
     CONFIRMED: 'bg-green-100 text-green-600',
     DONE: 'bg-blue-100 text-blue-600',
@@ -49,6 +54,9 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
+    ORDERED: 'Ordered',
+    UNPAID: 'Unpaid',
+    PAID: 'Paid',
     PENDING: 'Pending',
     CONFIRMED: 'Confirmed',
     DONE: 'Done',
@@ -110,6 +118,7 @@ export default function OrdersPage() {
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [printingId, setPrintingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
+    const [showSidebar, setShowSidebar] = useState(false);
 
     const handleStatusChange = async (orderId: number, newStatus: string) => {
         setUpdatingStatusId(orderId);
@@ -236,13 +245,20 @@ export default function OrdersPage() {
         <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
             <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
 
+                {/* Sidebar */}
+                <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} />
+
                 {/* Header */}
                 <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 pt-5 pb-4 space-y-4">
                     <div className="flex justify-between items-center">
-                        <h1 className="text-2xl font-extrabold tracking-tight text-primary">Orders</h1>
-                        <button className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm">
-                            <LuBell className="text-primary text-lg" />
+                        <button
+                            onClick={() => setShowSidebar(true)}
+                            className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm"
+                        >
+                            <LuMenu className="text-primary text-lg" />
                         </button>
+                        <h1 className="text-2xl font-extrabold tracking-tight text-primary">Orders</h1>
+                        <div className="w-10 h-10" />{/* spacer */}
                     </div>
 
                     {/* Search */}
@@ -319,7 +335,7 @@ export default function OrdersPage() {
                                                 onChange={e => handleStatusChange(order.id, e.target.value)}
                                                 className={`appearance-none cursor-pointer pl-3 pr-6 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-0 focus:outline-none transition-opacity disabled:opacity-50 ${STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-500'}`}
                                             >
-                                                {['PENDING', 'CONFIRMED', 'DONE', 'CANCELLED'].map(s => (
+                                                {['ORDERED', 'UNPAID', 'PAID', 'PENDING', 'CONFIRMED', 'DONE', 'CANCELLED'].map(s => (
                                                     <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
                                                 ))}
                                             </select>
