@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     LuSearch,
     LuCalendarDays,
@@ -18,6 +18,7 @@ import {
 } from 'react-icons/lu';
 // import BottomNav from '@/components/BottomNav';
 import { printOrder } from '@/utils/printer';
+import { subscribePush } from '@/utils/push';
 import Sidebar from '@/components/Sidebar';
 
 
@@ -124,6 +125,26 @@ export default function OrdersPage() {
     const [printingId, setPrintingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [showSidebar, setShowSidebar] = useState(false);
+    const [seenOrderCount, setSeenOrderCount] = useState<number>(() => {
+        if (typeof window === 'undefined') return 0;
+        return Number(localStorage.getItem('rpn_seen_order_count') ?? 0);
+    });
+    const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+    const today = getTodayStr();
+    const paidOrders = orders.filter(o => o.status === 'PAID' && o.pickup_date === today);
+    const unreadCount = Math.max(0, paidOrders.length - seenOrderCount);
+
+    const toggleBell = () => {
+        const next = !showNotifPanel;
+        setShowNotifPanel(next);
+        if (next) {
+            // mark as read
+            const n = paidOrders.length;
+            setSeenOrderCount(n);
+            localStorage.setItem('rpn_seen_order_count', String(n));
+        }
+    };
 
     const handleStatusChange = async (orderId: number, newStatus: string) => {
         setUpdatingStatusId(orderId);
@@ -231,28 +252,67 @@ export default function OrdersPage() {
         }
     };
 
+    // ── Polling & suara ────────────────────────────────────────────────
+    const prevPaidCountRef = useRef<number | null>(null);
+
+    const playDing = () => {
+        try {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            // Ding: 880 Hz → 1320 Hz
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.4, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.6);
+        } catch { /* audio blocked */ }
+    };
+
     useEffect(() => {
-        const fetchOrders = async () => {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+        const fetchOrders = async (isFirst = false) => {
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
                 const res = await fetch(`${apiUrl}/api/orders`);
                 const json = await res.json();
                 if (json.status === 'ok') {
                     const data = json.data as Order[];
+
+                    // Hitung PAID hari ini
+                    const todayStr = getTodayStr();
+                    const newPaidCount = data.filter(o => o.status === 'PAID' && o.pickup_date === todayStr).length;
+                    if (!isFirst && prevPaidCountRef.current !== null && newPaidCount > prevPaidCountRef.current) {
+                        playDing();
+                    }
+                    prevPaidCountRef.current = newPaidCount;
+
                     setOrders(data);
-                    const today = getTodayStr();
-                    const dates = Array.from(new Set(data.map(o => o.pickup_date)));
-                    const hasToday = dates.includes(today);
-                    if (hasToday) setActiveDate(today);
-                    // else: activeDate stays as today → filtered empty → shows "Belum ada order"
+                    if (isFirst) {
+                        const today = getTodayStr();
+                        const dates = Array.from(new Set(data.map(o => o.pickup_date)));
+                        if (dates.includes(today)) setActiveDate(today);
+                    }
                 }
             } catch (err) {
                 console.error('Failed to fetch orders:', err);
             } finally {
-                setLoading(false);
+                if (isFirst) setLoading(false);
             }
         };
-        fetchOrders();
+
+        fetchOrders(true);
+        const timer = setInterval(() => fetchOrders(false), 30_000);
+        return () => clearInterval(timer);
+    }, []);
+
+    // Auto-subscribe push notifications
+    useEffect(() => {
+        subscribePush().catch(console.error);
     }, []);
 
     // Unique pickup dates from orders, sorted ASC
@@ -289,7 +349,64 @@ export default function OrdersPage() {
                             <LuMenu className="text-primary text-lg" />
                         </button>
                         <h1 className="text-2xl font-extrabold tracking-tight text-primary">Orders</h1>
-                        <div className="w-10 h-10" />{/* spacer */}
+                        <div className="relative">
+                            <button
+                                onClick={toggleBell}
+                                className="relative w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm"
+                            >
+                                <LuBell className={`text-lg transition-transform ${showNotifPanel ? 'text-primary scale-110' : 'text-primary'}`} />
+                                {unreadCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center leading-none">
+                                        {unreadCount > 99 ? '99+' : unreadCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            {/* Notif Panel */}
+                            {showNotifPanel && (
+                                <>
+                                    {/* Overlay to close */}
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowNotifPanel(false)} />
+                                    <div className="absolute right-0 top-12 z-50 w-72 bg-white rounded-2xl shadow-2xl border border-primary/10 overflow-hidden">
+                                        <div className="px-4 py-3 border-b border-primary/10 flex items-center justify-between">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-primary/50">Order Sudah Dibayar</p>
+                                            <span className="text-[10px] font-bold text-primary/40">{paidOrders.length} order</span>
+                                        </div>
+                                        <div className="max-h-72 overflow-y-auto divide-y divide-primary/5">
+                                            {paidOrders.length === 0 ? (
+                                                <div className="py-8 text-center">
+                                                    <p className="text-xs text-primary/40 font-semibold">Belum ada order PAID 🔔</p>
+                                                </div>
+                                            ) : (
+                                                paidOrders
+                                                    .sort((a, b) => a.pickup_date.localeCompare(b.pickup_date))
+                                                    .map(o => (
+                                                        <button
+                                                            key={o.id}
+                                                            onClick={() => {
+                                                                setShowNotifPanel(false);
+                                                                setActiveDate(o.pickup_date);
+                                                            }}
+                                                            className="w-full px-4 py-3 text-left hover:bg-primary/5 transition-colors"
+                                                        >
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <p className="text-sm font-bold text-primary truncate">{o.customer_name}</p>
+                                                                <span className="text-[10px] font-black text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full shrink-0">PAID</span>
+                                                            </div>
+                                                            <p className="text-[11px] text-primary/50 mt-0.5">
+                                                                {formatPickupDate(o.pickup_date)}{o.pickup_time ? ` · ${o.pickup_time}` : ''}
+                                                            </p>
+                                                            <p className="text-[10px] text-primary/40 mt-0.5">
+                                                                {o.items.map(i => i.name).join(', ')}
+                                                            </p>
+                                                        </button>
+                                                    ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
 
                     {/* Search */}
