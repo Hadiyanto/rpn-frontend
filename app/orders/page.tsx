@@ -35,6 +35,7 @@ interface Order {
     pickup_time: string;
     note: string | null;
     status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE';
+    payment_method: 'TRANSFER' | 'CASH' | null;
     created_at: string;
     items: OrderItem[];
 }
@@ -55,6 +56,16 @@ const STATUS_LABEL: Record<string, string> = {
     PAID: 'Paid',
     CONFIRMED: 'Confirmed',
     DONE: 'Done',
+};
+
+const PAYMENT_STYLES: Record<string, string> = {
+    TRANSFER: 'bg-blue-100 text-blue-600',
+    CASH: 'bg-emerald-100 text-emerald-600',
+};
+
+const PAYMENT_LABEL: Record<string, string> = {
+    TRANSFER: 'Transfer',
+    CASH: 'Cash',
 };
 
 
@@ -125,7 +136,6 @@ export default function OrdersPage() {
             });
             const json = await res.json();
             if (json.status === 'ok') {
-                // Update local state optimistically
                 setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as Order['status'] } : o));
             } else {
                 alert(json.message || 'Gagal update status');
@@ -134,6 +144,30 @@ export default function OrdersPage() {
             alert('Gagal update status');
         } finally {
             setUpdatingStatusId(null);
+        }
+    };
+
+    const [updatingPaymentId, setUpdatingPaymentId] = useState<number | null>(null);
+
+    const handlePaymentMethodChange = async (orderId: number, newMethod: string) => {
+        setUpdatingPaymentId(orderId);
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+            const res = await fetch(`${apiUrl}/api/order/${orderId}/payment-method`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ payment_method: newMethod || null }),
+            });
+            const json = await res.json();
+            if (json.status === 'ok') {
+                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, payment_method: newMethod as Order['payment_method'] } : o));
+            } else {
+                alert(json.message || 'Gagal update payment method');
+            }
+        } catch {
+            alert('Gagal update payment method');
+        } finally {
+            setUpdatingPaymentId(null);
         }
     };
 
@@ -146,6 +180,7 @@ export default function OrdersPage() {
         pickup_date: getTodayStr(),
         pickup_time: '11:00',
         note: '',
+        payment_method: '' as '' | 'TRANSFER' | 'CASH',
         pesanan: [emptyItem()],
     });
 
@@ -154,6 +189,7 @@ export default function OrdersPage() {
         pickup_date: getTodayStr(),
         pickup_time: '11:00',
         note: '',
+        payment_method: '',
         pesanan: [emptyItem()],
     });
 
@@ -172,6 +208,7 @@ export default function OrdersPage() {
                     pickup_date: form.pickup_date,
                     pickup_time: form.pickup_time.trim() || null,
                     note: form.note.trim() || null,
+                    payment_method: form.payment_method || null,
                     pesanan: form.pesanan.map(p => ({ box_type: p.box_type, name: p.name.trim(), qty: p.qty })),
                 }),
             });
@@ -322,18 +359,36 @@ export default function OrdersPage() {
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="relative border-2 border-current rounded-full" style={{ borderColor: 'currentColor', opacity: 0.8 }}>
-                                            <select
-                                                value={order.status}
-                                                disabled={updatingStatusId === order.id}
-                                                onChange={e => handleStatusChange(order.id, e.target.value)}
-                                                className={`appearance-none cursor-pointer pl-3 pr-6 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-0 focus:outline-none transition-opacity disabled:opacity-50 ${STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-500'}`}
-                                            >
-                                                {['UNPAID', 'PAID', 'CONFIRMED', 'DONE'].map(s => (
-                                                    <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
-                                                ))}
-                                            </select>
-                                            <LuChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" />
+                                        <div className="flex flex-col items-end gap-1.5">
+                                            {/* Status */}
+                                            <div className="relative border-2 border-current rounded-full" style={{ borderColor: 'currentColor', opacity: 0.8 }}>
+                                                <select
+                                                    value={order.status}
+                                                    disabled={updatingStatusId === order.id}
+                                                    onChange={e => handleStatusChange(order.id, e.target.value)}
+                                                    className={`appearance-none cursor-pointer pl-3 pr-6 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-0 focus:outline-none transition-opacity disabled:opacity-50 ${STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-500'}`}
+                                                >
+                                                    {['UNPAID', 'PAID', 'CONFIRMED', 'DONE'].map(s => (
+                                                        <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
+                                                    ))}
+                                                </select>
+                                                <LuChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" />
+                                            </div>
+                                            {/* Payment Method */}
+                                            <div className="relative rounded-full border-2 border-current" style={{ borderColor: 'currentColor', opacity: 0.8 }}>
+                                                <select
+                                                    value={order.payment_method ?? ''}
+                                                    disabled={updatingPaymentId === order.id}
+                                                    onChange={e => handlePaymentMethodChange(order.id, e.target.value)}
+                                                    className={`appearance-none cursor-pointer pl-3 pr-6 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-0 focus:outline-none transition-opacity disabled:opacity-50 ${order.payment_method ? (PAYMENT_STYLES[order.payment_method] ?? 'bg-gray-100 text-gray-500') : 'bg-gray-100 text-gray-400'
+                                                        }`}
+                                                >
+                                                    <option value="">--</option>
+                                                    <option value="TRANSFER">Transfer</option>
+                                                    <option value="CASH">Cash</option>
+                                                </select>
+                                                <LuChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" />
+                                            </div>
                                         </div>
                                     </div>
 
@@ -566,6 +621,23 @@ export default function OrdersPage() {
                                             />
                                         </div>
                                     ))}
+                                </div>
+
+                                {/* Payment Method */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Metode Pembayaran</label>
+                                    <div className="relative">
+                                        <select
+                                            value={form.payment_method}
+                                            onChange={e => setForm(f => ({ ...f, payment_method: e.target.value as typeof form.payment_method }))}
+                                            className="w-full h-11 px-4 pr-10 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 appearance-none"
+                                        >
+                                            <option value="">Pilih metode pembayaran...</option>
+                                            <option value="TRANSFER">Transfer</option>
+                                            <option value="CASH">Cash</option>
+                                        </select>
+                                        <LuChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
+                                    </div>
                                 </div>
 
                                 {/* Note */}
