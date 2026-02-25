@@ -191,12 +191,16 @@ export const printOrder = async (data: OrderReceiptData) => {
             .bold(false)
             .line(c('-- ORDER --'))
             .align('left')
+            .newline()
             .line('--------------------------------')
             .line(`Nama  : ${data.customerName}`)
             .line(`Pickup: ${data.pickupDate}`)
             .line(`Waktu : ${data.pickupTime}`)
             .line(`Order#: #${data.orderId}`)
-            .line('--------------------------------');
+            .line('--------------------------------')
+            .newline()
+            .newline();
+
 
 
         const fullItems = data.items.filter(i => i.box_type === 'FULL');
@@ -206,9 +210,11 @@ export const printOrder = async (data: OrderReceiptData) => {
             chain = chain.bold(true).line('[ FULL BOX ]').bold(false);
             fullItems.forEach(item => {
                 chain = chain.line(`  ${item.qty}x ${item.name}`);
+                chain = chain.newline();
             });
             const totalFull = fullItems.reduce((s, i) => s + i.qty, 0);
             chain = chain.line(`  Total: ${totalFull} box`);
+            chain = chain.newline();
         }
 
         if (halfItems.length > 0) {
@@ -216,9 +222,11 @@ export const printOrder = async (data: OrderReceiptData) => {
             chain = chain.bold(true).line('[ HALF BOX ]').bold(false);
             halfItems.forEach(item => {
                 chain = chain.line(`  ${item.qty}x ${item.name}`);
+                chain = chain.newline();
             });
             const totalHalf = halfItems.reduce((s, i) => s + i.qty, 0);
             chain = chain.line(`  Total: ${totalHalf} box`);
+            chain = chain.newline();
         }
 
         chain = chain.line('--------------------------------');
