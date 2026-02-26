@@ -11,24 +11,33 @@ import {
     LuLogOut,
     LuUser,
     LuChartBar,
+    LuBanknote,
+    LuArrowLeftRight,
 } from 'react-icons/lu';
 
 interface SidebarProps {
     open: boolean;
     onClose: () => void;
+    allowedPages?: string[];
+    userEmail?: string;
+    userRole?: string;
 }
 
 const NAV_ITEMS = [
-    { label: 'Home', icon: LuHouse, href: '/orders' },
-    { label: 'Analytics', icon: LuChartBar, href: '/analytics' },
-    // { label: 'Penjualan', icon: LuShoppingCart, href: '/sales' },
-    // { label: 'Pengeluaran', icon: LuReceipt, href: '/expenses' },
+    { label: 'Home', icon: LuHouse, href: '/orders', key: 'orders' },
+    { label: 'Analytics', icon: LuChartBar, href: '/analytics', key: 'analytics' },
+    { label: 'Finance', icon: LuBanknote, href: '/finance', key: 'finance' },
+    { label: 'Cash Flow', icon: LuArrowLeftRight, href: '/cashflow', key: 'cashflow' },
 ];
 
-export default function Sidebar({ open, onClose }: SidebarProps) {
+export default function Sidebar({ open, onClose, allowedPages, userEmail, userRole }: SidebarProps) {
     const router = useRouter();
     const pathname = usePathname();
     const supabase = createClient();
+
+    const visibleItems = allowedPages
+        ? NAV_ITEMS.filter(item => allowedPages.includes(item.key))
+        : NAV_ITEMS; // show all if no allowedPages provided (backwards compat)
 
     const handleNav = (href: string) => {
         onClose();
@@ -40,6 +49,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         await supabase.auth.signOut();
         router.push('/');
     };
+
+    const displayRole = userRole
+        ? userRole.charAt(0).toUpperCase() + userRole.slice(1)
+        : 'Admin';
 
     return (
         <>
@@ -60,8 +73,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                             <LuUser className="text-primary text-lg" />
                         </div>
                         <div>
-                            <p className="text-brand-yellow text-sm font-extrabold leading-tight">Raja Pisang Nugget</p>
-                            <p className="text-white/40 text-[10px] font-medium">Admin</p>
+                            <p className="text-brand-yellow text-sm font-extrabold leading-tight">
+                                {userEmail || 'Raja Pisang Nugget'}
+                            </p>
+                            <p className="text-white/40 text-[10px] font-medium">{displayRole}</p>
                         </div>
                     </div>
                     <button
@@ -74,7 +89,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
                 {/* Nav Items */}
                 <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-                    {NAV_ITEMS.map(({ label, icon: Icon, href }) => {
+                    {visibleItems.map(({ label, icon: Icon, href }) => {
                         const isActive = pathname === href;
                         return (
                             <button

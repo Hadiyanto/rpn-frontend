@@ -21,6 +21,7 @@ import {
 import { printOrder } from '@/utils/printer';
 import { subscribePush } from '@/utils/push';
 import Sidebar from '@/components/Sidebar';
+import { useUserRole } from '@/hooks/useUserRole';
 
 
 interface OrderItem {
@@ -126,6 +127,7 @@ export default function OrdersPage() {
     const [printingId, setPrintingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [showSidebar, setShowSidebar] = useState(false);
+    const userRoleData = useUserRole();
     const [seenOrderCount, setSeenOrderCount] = useState<number>(() => {
         if (typeof window === 'undefined') return 0;
         return Number(localStorage.getItem('rpn_seen_order_count') ?? 0);
@@ -369,7 +371,7 @@ export default function OrdersPage() {
             <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
 
                 {/* Sidebar */}
-                <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} />
+                <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
                 {/* Header */}
                 <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 pt-5 pb-4 space-y-4">

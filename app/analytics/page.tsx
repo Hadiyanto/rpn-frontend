@@ -10,6 +10,7 @@ import {
     LuChartBar,
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
+import { useUserRole } from '@/hooks/useUserRole';
 
 interface OrderItem {
     id: number;
@@ -44,6 +45,7 @@ export default function AnalyticsPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSidebar, setShowSidebar] = useState(false);
+    const userRoleData = useUserRole();
     const [rangeStart, setRangeStart] = useState<string | null>(getTodayStr());
     const [rangeEnd, setRangeEnd] = useState<string | null>(null);
     const [activeStatus, setActiveStatus] = useState<string>('ALL');
@@ -128,7 +130,7 @@ export default function AnalyticsPage() {
         <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
             <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
 
-                <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} />
+                <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
                 {/* Header */}
                 <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 pt-5 pb-4">
