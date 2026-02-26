@@ -11,6 +11,10 @@ export const metadata: Metadata = {
   title: "Raja Pisang Nugget",
   description: "Business Login Portal",
   manifest: "/json/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    apple: "/images/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

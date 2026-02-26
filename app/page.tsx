@@ -60,7 +60,7 @@ export default function LoginPage() {
           <div className="bg-white/90 backdrop-blur-sm rounded-3xl p-5 shadow-xl mb-6 border border-white/20">
 
             <div className="space-y-3">
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 pb-6">
                 <label className="text-primary text-[10px] font-bold uppercase tracking-wider ml-1">Email</label>
                 <div className="relative group">
                   <LuUser className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/40 group-focus-within:text-primary transition-colors" />
@@ -74,7 +74,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 pb-6">
                 <label className="text-primary text-[10px] font-bold uppercase tracking-wider ml-1">Password</label>
                 <div className="relative group">
                   <LuLock className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/40 group-focus-within:text-primary transition-colors" />
@@ -95,7 +95,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="pt-4">
+            <div className="pt-6">
               <button
                 onClick={handleLogin}
                 disabled={loading}
