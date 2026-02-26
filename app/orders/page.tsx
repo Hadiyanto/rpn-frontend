@@ -15,6 +15,7 @@ import {
     LuPlus,
     LuTrash2,
     LuMenu,
+    LuPencil,
 } from 'react-icons/lu';
 // import BottomNav from '@/components/BottomNav';
 import { printOrder } from '@/utils/printer';
@@ -194,6 +195,7 @@ export default function OrdersPage() {
 
     // Bottom sheet state
     const [showSheet, setShowSheet] = useState(false);
+    const [editingOrder, setEditingOrder] = useState<Order | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const emptyItem = () => ({ box_type: 'FULL' as 'FULL' | 'HALF', name: '', qty: 1 });
     const [form, setForm] = useState({
@@ -221,32 +223,62 @@ export default function OrdersPage() {
         setSubmitting(true);
         try {
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-            const res = await fetch(`${apiUrl}/api/order`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    customer_name: form.customer_name.trim(),
-                    pickup_date: form.pickup_date,
-                    pickup_time: form.pickup_time.trim() || null,
-                    note: form.note.trim() || null,
-                    payment_method: form.payment_method || null,
-                    pesanan: form.pesanan.map(p => ({ box_type: p.box_type, name: p.name.trim(), qty: p.qty })),
-                }),
-            });
-            const json = await res.json();
-            if (json.status === 'ok') {
-                // Refresh orders
-                const res2 = await fetch(`${apiUrl}/api/orders`);
-                const json2 = await res2.json();
-                if (json2.status === 'ok') setOrders(json2.data);
-                setShowSheet(false);
-                resetForm();
+
+            if (editingOrder) {
+                // EDIT mode
+                const res = await fetch(`${apiUrl}/api/order/${editingOrder.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_name: form.customer_name.trim(),
+                        pickup_date: form.pickup_date,
+                        pickup_time: form.pickup_time.trim() || null,
+                        note: form.note.trim() || null,
+                        payment_method: form.payment_method || null,
+                        pesanan: form.pesanan.map(p => ({ box_type: p.box_type, name: p.name.trim(), qty: p.qty })),
+                    }),
+                });
+                const json = await res.json();
+                if (json.status === 'ok') {
+                    // Refresh orders
+                    const res2 = await fetch(`${apiUrl}/api/orders`);
+                    const json2 = await res2.json();
+                    if (json2.status === 'ok') setOrders(json2.data);
+                    setShowSheet(false);
+                    setEditingOrder(null);
+                    resetForm();
+                } else {
+                    alert(json.message || 'Gagal update order');
+                }
             } else {
-                alert(json.message || 'Gagal submit order');
+                // CREATE mode
+                const res = await fetch(`${apiUrl}/api/order`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_name: form.customer_name.trim(),
+                        pickup_date: form.pickup_date,
+                        pickup_time: form.pickup_time.trim() || null,
+                        note: form.note.trim() || null,
+                        payment_method: form.payment_method || null,
+                        pesanan: form.pesanan.map(p => ({ box_type: p.box_type, name: p.name.trim(), qty: p.qty })),
+                    }),
+                });
+                const json = await res.json();
+                if (json.status === 'ok') {
+                    // Refresh orders
+                    const res2 = await fetch(`${apiUrl}/api/orders`);
+                    const json2 = await res2.json();
+                    if (json2.status === 'ok') setOrders(json2.data);
+                    setShowSheet(false);
+                    resetForm();
+                } else {
+                    alert(json.message || 'Gagal submit order');
+                }
             }
         } catch (err) {
             console.error(err);
-            alert('Gagal submit order');
+            alert(editingOrder ? 'Gagal update order' : 'Gagal submit order');
         } finally {
             setSubmitting(false);
         }
@@ -569,30 +601,50 @@ export default function OrdersPage() {
                                                 {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })}
                                             </span>
                                         </div>
-                                        <button
-                                            onClick={async () => {
-                                                setPrintingId(order.id);
-                                                try {
-                                                    await printOrder({
-                                                        customerName: order.customer_name,
-                                                        pickupDate: formatPickupDate(order.pickup_date),
-                                                        pickupTime: order.pickup_time,
-                                                        note: order.note,
-                                                        orderId: order.id,
-                                                        items: order.items,
+                                        <div className="mt-2 flex gap-2">
+                                            <button
+                                                onClick={() => {
+                                                    setEditingOrder(order);
+                                                    setForm({
+                                                        customer_name: order.customer_name,
+                                                        pickup_date: order.pickup_date,
+                                                        pickup_time: order.pickup_time?.slice(0, 5) || '11:00',
+                                                        note: order.note || '',
+                                                        payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'CASH',
+                                                        pesanan: order.items.map(i => ({ box_type: i.box_type, name: i.name, qty: i.qty })),
                                                     });
-                                                } catch {
-                                                    alert('Gagal print. Pastikan Bluetooth aktif dan pilih printer yang benar.');
-                                                } finally {
-                                                    setPrintingId(null);
-                                                }
-                                            }}
-                                            disabled={printingId === order.id}
-                                            className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-brand-yellow text-xs font-black uppercase tracking-wider shadow-sm active:scale-95 transition-all disabled:opacity-50"
-                                        >
-                                            <LuPrinter className="text-sm" />
-                                            {printingId === order.id ? 'Printing...' : 'Cetak Order'}
-                                        </button>
+                                                    setShowSheet(true);
+                                                }}
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 text-primary text-xs font-black uppercase tracking-wider active:scale-95 transition-all"
+                                            >
+                                                <LuPencil className="text-sm" />
+                                                Edit Order
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    setPrintingId(order.id);
+                                                    try {
+                                                        await printOrder({
+                                                            customerName: order.customer_name,
+                                                            pickupDate: formatPickupDate(order.pickup_date),
+                                                            pickupTime: order.pickup_time,
+                                                            note: order.note,
+                                                            orderId: order.id,
+                                                            items: order.items,
+                                                        });
+                                                    } catch {
+                                                        alert('Gagal print. Pastikan Bluetooth aktif dan pilih printer yang benar.');
+                                                    } finally {
+                                                        setPrintingId(null);
+                                                    }
+                                                }}
+                                                disabled={printingId === order.id}
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-brand-yellow text-xs font-black uppercase tracking-wider shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                                            >
+                                                <LuPrinter className="text-sm" />
+                                                {printingId === order.id ? 'Printing...' : 'Cetak Order'}
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -602,7 +654,7 @@ export default function OrdersPage() {
 
                 {/* FAB */}
                 <button
-                    onClick={() => { resetForm(); setShowSheet(true); }}
+                    onClick={() => { setEditingOrder(null); resetForm(); setShowSheet(true); }}
                     className="fixed bottom-8 right-6 w-14 h-14 bg-primary text-brand-yellow rounded-2xl shadow-xl flex items-center justify-center active:scale-90 transition-transform z-40"
                 >
                     <LuPlus className="text-2xl font-black" />
@@ -612,7 +664,7 @@ export default function OrdersPage() {
                 {showSheet && (
                     <div className="fixed inset-0 z-50 flex flex-col justify-end">
                         {/* Backdrop */}
-                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowSheet(false)} />
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setShowSheet(false); setEditingOrder(null); resetForm(); }} />
 
                         {/* Sheet */}
                         <div className="relative bg-white rounded-t-3xl max-h-[90vh] flex flex-col w-full max-w-[480px] mx-auto shadow-2xl">
@@ -623,8 +675,10 @@ export default function OrdersPage() {
 
                             {/* Header */}
                             <div className="flex items-center justify-between px-5 py-3 border-b border-primary/10">
-                                <h2 className="text-base font-extrabold text-primary">Order Baru</h2>
-                                <button onClick={() => setShowSheet(false)} className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10">
+                                <h2 className="text-base font-extrabold text-primary">
+                                    {editingOrder ? `Edit Order #${editingOrder.id}` : 'Order Baru'}
+                                </h2>
+                                <button onClick={() => { setShowSheet(false); setEditingOrder(null); resetForm(); }} className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10">
                                     <LuX className="text-primary text-sm" />
                                 </button>
                             </div>
@@ -777,7 +831,7 @@ export default function OrdersPage() {
                                     disabled={submitting}
                                     className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-sm rounded-2xl shadow-lg active:scale-[0.98] transition-transform disabled:opacity-50 py-3"
                                 >
-                                    {submitting ? 'Menyimpan...' : 'Simpan Order'}
+                                    {submitting ? (editingOrder ? 'Menyimpan...' : 'Menyimpan...') : (editingOrder ? 'Simpan Perubahan' : 'Simpan Order')}
                                 </button>
                             </div>
                         </div>
