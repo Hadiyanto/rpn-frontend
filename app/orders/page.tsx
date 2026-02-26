@@ -695,9 +695,15 @@ export default function OrdersPage() {
                                         className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
                                         placeholder="Nama pemesan"
                                         autoCapitalize="words"
+                                        list="customer-names"
                                         value={form.customer_name}
                                         onChange={e => setForm(f => ({ ...f, customer_name: toTitleCase(e.target.value) }))}
                                     />
+                                    <datalist id="customer-names">
+                                        {Array.from(new Set(orders.map(o => o.customer_name ? toTitleCase(o.customer_name.trim()) : ''))).filter(Boolean).sort().map(name => (
+                                            <option key={name} value={name} />
+                                        ))}
+                                    </datalist>
                                 </div>
 
                                 {/* Pickup Date & Time */}
@@ -789,9 +795,15 @@ export default function OrdersPage() {
                                                 className="w-full h-10 px-4 rounded-xl border-2 border-primary/10 bg-white text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
                                                 placeholder="Nama pesanan (contoh: Choco Kraft)"
                                                 autoCapitalize="words"
+                                                list={`item-names-${idx}`}
                                                 value={item.name}
                                                 onChange={e => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: toTitleCase(e.target.value) } : p) }))}
                                             />
+                                            <datalist id={`item-names-${idx}`}>
+                                                {Array.from(new Set(orders.flatMap(o => o.items.map(i => i.name ? toTitleCase(i.name.trim()) : '')))).filter(Boolean).sort().map(name => (
+                                                    <option key={name} value={name} />
+                                                ))}
+                                            </datalist>
                                         </div>
                                     ))}
                                 </div>

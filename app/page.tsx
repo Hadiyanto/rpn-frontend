@@ -22,7 +22,8 @@ export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const handleLogin = async () => {
+  const handleLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -57,7 +58,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <div className="bg-white/90 backdrop-blur-sm rounded-3xl p-5 shadow-xl mb-6 border border-white/20">
+          <form onSubmit={handleLogin} className="bg-white/90 backdrop-blur-sm rounded-3xl p-5 shadow-xl mb-6 border border-white/20">
 
             <div className="space-y-3">
               <div className="flex flex-col gap-1.5 pb-6">
@@ -97,14 +98,14 @@ export default function LoginPage() {
 
             <div className="pt-6">
               <button
-                onClick={handleLogin}
+                type="submit"
                 disabled={loading}
                 className="w-full h-12 bg-primary text-brand-yellow font-extrabold text-base rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-transform flex items-center justify-center"
               >
                 {loading ? 'Logging in...' : 'Login'}
               </button>
             </div>
-          </div>
+          </form>
 
           <div className="mt-auto pb-4 text-center">
             <div className="flex items-center justify-center gap-2 pt-4 opacity-40 text-primary">
