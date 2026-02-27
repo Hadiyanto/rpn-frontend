@@ -16,6 +16,9 @@ import {
     LuTrash2,
     LuMenu,
     LuPencil,
+    LuWallet,
+    LuCheck,
+    LuPackageCheck
 } from 'react-icons/lu';
 // import BottomNav from '@/components/BottomNav';
 import { printOrder } from '@/utils/printer';
@@ -52,6 +55,7 @@ const STATUS_STYLES: Record<string, string> = {
     PAID: 'bg-teal-100 text-teal-600',
     CONFIRMED: 'bg-green-100 text-green-600',
     DONE: 'bg-blue-100 text-blue-600',
+    CANCELLED: 'bg-red-100 text-red-600',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -59,6 +63,7 @@ const STATUS_LABEL: Record<string, string> = {
     PAID: 'Paid',
     CONFIRMED: 'Confirmed',
     DONE: 'Done',
+    CANCELLED: 'Cancelled',
 };
 
 const PAYMENT_STYLES: Record<string, string> = {
@@ -123,6 +128,7 @@ export default function OrdersPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [activeDate, setActiveDate] = useState<string>(getTodayStr());
+    const [activeTab, setActiveTab] = useState<'ALL' | 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE' | 'CANCELLED'>('ALL');
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [printingId, setPrintingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
@@ -359,7 +365,9 @@ export default function OrdersPage() {
 
         const matchDate = activeDate === 'All' ? true : order.pickup_date === activeDate;
 
-        return matchSearch && matchDate;
+        const matchStatus = activeTab === 'ALL' ? true : order.status === activeTab;
+
+        return matchSearch && matchDate && matchStatus;
     }).sort((a, b) => {
         const dateCompare = a.pickup_date.localeCompare(b.pickup_date);
         if (dateCompare !== 0) return dateCompare;
@@ -470,6 +478,25 @@ export default function OrdersPage() {
                             </button>
                         ))}
                     </div>
+
+                    {/* Status filter tabs */}
+                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x">
+                        {(['ALL', 'UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(s => {
+                            const isActive = activeTab === s;
+                            return (
+                                <button
+                                    key={s}
+                                    onClick={() => setActiveTab(s)}
+                                    className={`snap-center px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${isActive
+                                        ? 'bg-primary text-brand-yellow shadow-md'
+                                        : 'bg-white/60 text-primary/60 border border-primary/10'
+                                        }`}
+                                >
+                                    {s === 'ALL' ? 'Semua' : STATUS_LABEL[s]}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </header>
 
                 {/* Content */}
@@ -519,7 +546,7 @@ export default function OrdersPage() {
                                                     onChange={e => handleStatusChange(order.id, e.target.value)}
                                                     className={`appearance-none cursor-pointer pl-3 pr-6 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-0 focus:outline-none transition-opacity disabled:opacity-50 ${STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-500'}`}
                                                 >
-                                                    {['UNPAID', 'PAID', 'CONFIRMED', 'DONE'].map(s => (
+                                                    {['UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'].map(s => (
                                                         <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
                                                     ))}
                                                 </select>
@@ -603,49 +630,94 @@ export default function OrdersPage() {
                                                 {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })}
                                             </span>
                                         </div>
-                                        <div className="mt-2 flex gap-2">
-                                            <button
-                                                onClick={() => {
-                                                    setEditingOrder(order);
-                                                    setForm({
-                                                        customer_name: order.customer_name,
-                                                        pickup_date: order.pickup_date,
-                                                        pickup_time: order.pickup_time?.slice(0, 5) || '11:00',
-                                                        note: order.note || '',
-                                                        payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'CASH',
-                                                        pesanan: order.items.map(i => ({ box_type: i.box_type, name: i.name, qty: i.qty })),
-                                                    });
-                                                    setShowSheet(true);
-                                                }}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 text-primary text-xs font-black uppercase tracking-wider active:scale-95 transition-all"
-                                            >
-                                                <LuPencil className="text-sm" />
-                                                Edit Order
-                                            </button>
-                                            <button
-                                                onClick={async () => {
-                                                    setPrintingId(order.id);
-                                                    try {
-                                                        await printOrder({
-                                                            customerName: order.customer_name,
-                                                            pickupDate: formatPickupDate(order.pickup_date),
-                                                            pickupTime: order.pickup_time,
-                                                            note: order.note,
-                                                            orderId: order.id,
-                                                            items: order.items,
+                                        <div className="pt-3 border-t border-primary/5 flex items-center justify-between">
+                                            <div className="flex gap-2">
+                                                {order.status === 'UNPAID' && (
+                                                    <button
+                                                        onClick={() => handleStatusChange(order.id, 'PAID')}
+                                                        className="flex flex-col items-center justify-center bg-teal-50 hover:bg-teal-100 text-teal-600 px-4 py-2 rounded-xl transition-colors active:scale-95"
+                                                    >
+                                                        <LuCheck className="text-xl mb-1" />
+                                                        <span className="text-[10px] font-black uppercase">Paid</span>
+                                                    </button>
+                                                )}
+                                                {order.status === 'PAID' && (
+                                                    <button
+                                                        onClick={() => handleStatusChange(order.id, 'CONFIRMED')}
+                                                        className="flex flex-col items-center justify-center bg-green-50 hover:bg-green-100 text-green-600 px-4 py-2 rounded-xl transition-colors active:scale-95"
+                                                    >
+                                                        <LuCheck className="text-xl mb-1" />
+                                                        <span className="text-[10px] font-black uppercase">Confirm</span>
+                                                    </button>
+                                                )}
+                                                {order.status === 'CONFIRMED' && (
+                                                    <button
+                                                        onClick={() => handleStatusChange(order.id, 'DONE')}
+                                                        className="flex flex-col items-center justify-center bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-2 rounded-xl transition-colors active:scale-95"
+                                                    >
+                                                        <LuPackageCheck className="text-xl mb-1" />
+                                                        <span className="text-[10px] font-black uppercase">Done</span>
+                                                    </button>
+                                                )}
+                                                {['UNPAID', 'PAID', 'CONFIRMED'].includes(order.status) && (
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('Yakin ingin membatalkan order ini?')) {
+                                                                handleStatusChange(order.id, 'CANCELLED');
+                                                            }
+                                                        }}
+                                                        className="flex flex-col items-center justify-center bg-red-50 hover:bg-red-100 text-red-500 px-4 py-2 rounded-xl transition-colors active:scale-95"
+                                                    >
+                                                        <LuTrash2 className="text-xl mb-1" />
+                                                        <span className="text-[10px] font-black uppercase">Cancel</span>
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingOrder(order);
+                                                        setForm({
+                                                            customer_name: order.customer_name,
+                                                            pickup_date: order.pickup_date,
+                                                            pickup_time: order.pickup_time?.slice(0, 5) || '11:00',
+                                                            note: order.note || '',
+                                                            payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'CASH',
+                                                            pesanan: order.items.map(i => ({ box_type: i.box_type, name: i.name, qty: i.qty })),
                                                         });
-                                                    } catch {
-                                                        alert('Gagal print. Pastikan Bluetooth aktif dan pilih printer yang benar.');
-                                                    } finally {
-                                                        setPrintingId(null);
-                                                    }
-                                                }}
-                                                disabled={printingId === order.id}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-brand-yellow text-xs font-black uppercase tracking-wider shadow-sm active:scale-95 transition-all disabled:opacity-50"
-                                            >
-                                                <LuPrinter className="text-sm" />
-                                                {printingId === order.id ? 'Printing...' : 'Cetak Order'}
-                                            </button>
+                                                        setShowSheet(true);
+                                                    }}
+                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 text-primary text-xs font-black uppercase tracking-wider active:scale-95 transition-all"
+                                                >
+                                                    <LuPencil className="text-sm" />
+                                                    Edit Order
+                                                </button>
+                                                <button
+                                                    onClick={async () => {
+                                                        setPrintingId(order.id);
+                                                        try {
+                                                            await printOrder({
+                                                                customerName: order.customer_name,
+                                                                pickupDate: formatPickupDate(order.pickup_date),
+                                                                pickupTime: order.pickup_time,
+                                                                note: order.note,
+                                                                orderId: order.id,
+                                                                items: order.items,
+                                                            });
+                                                        } catch {
+                                                            alert('Gagal print. Pastikan Bluetooth aktif dan pilih printer yang benar.');
+                                                        } finally {
+                                                            setPrintingId(null);
+                                                        }
+                                                    }}
+                                                    disabled={printingId === order.id}
+                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-brand-yellow text-xs font-black uppercase tracking-wider shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                                                >
+                                                    <LuPrinter className="text-sm" />
+                                                    {printingId === order.id ? 'Printing...' : 'Cetak Order'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}

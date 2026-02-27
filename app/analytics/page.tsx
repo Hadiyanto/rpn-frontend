@@ -189,15 +189,16 @@ export default function AnalyticsPage() {
 
                         {/* Status filter chips */}
                         <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-                            {(['ALL', 'UNPAID', 'PAID', 'CONFIRMED', 'DONE'] as const).map(s => {
+                            {(['ALL', 'UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(s => {
                                 const STATUS_STYLES: Record<string, string> = {
                                     UNPAID: 'bg-orange-100 text-orange-600',
                                     PAID: 'bg-teal-100 text-teal-600',
                                     CONFIRMED: 'bg-green-100 text-green-600',
                                     DONE: 'bg-blue-100 text-blue-600',
+                                    CANCELLED: 'bg-red-100 text-red-600',
                                 };
                                 const STATUS_LABEL: Record<string, string> = {
-                                    ALL: 'Semua', UNPAID: 'Unpaid', PAID: 'Paid', CONFIRMED: 'Confirmed', DONE: 'Done',
+                                    ALL: 'Semua', UNPAID: 'Unpaid', PAID: 'Paid', CONFIRMED: 'Confirmed', DONE: 'Done', CANCELLED: 'Cancelled',
                                 };
                                 const isActive = activeStatus === s;
                                 const chipStyle = isActive && s !== 'ALL'
@@ -465,7 +466,7 @@ export default function AnalyticsPage() {
                             {/* Order Status Breakdown */}
                             <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
                                 <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black mb-4">Status Order</p>
-                                {(['UNPAID', 'PAID', 'CONFIRMED', 'DONE'] as const).map(status => {
+                                {(['UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(status => {
                                     const count = dayOrders.filter(o => o.status === status).length;
                                     const pct = totalOrders > 0 ? Math.round((count / totalOrders) * 100) : 0;
                                     const colors: Record<string, string> = {
@@ -473,6 +474,7 @@ export default function AnalyticsPage() {
                                         PAID: 'bg-teal-400',
                                         CONFIRMED: 'bg-emerald-500',
                                         DONE: 'bg-blue-400',
+                                        CANCELLED: 'bg-red-500',
                                     };
                                     if (count === 0) return null;
                                     return (

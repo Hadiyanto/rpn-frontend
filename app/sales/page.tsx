@@ -1,514 +1,497 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { LuChevronLeft, LuChevronDown, LuPlus, LuTrash } from 'react-icons/lu';
-import BottomNav from '@/components/BottomNav';
-import Link from 'next/link';
-import PrintReceipt from '@/components/PrintReceipt';
+import {
+    LuMenu,
+    LuPackage,
+    LuClipboardList,
+    LuStar,
+    LuTrendingUp,
+    LuChartBar,
+} from 'react-icons/lu';
+import Sidebar from '@/components/Sidebar';
+import { useUserRole } from '@/hooks/useUserRole';
 
-interface Menu {
+interface OrderItem {
     id: number;
-    name: string;
-    price: number;
-    category: string;
-}
-
-interface Variant {
-    id: number;
-    menu_id: number;
-    variant_name: string;
-}
-
-interface CartItem {
-    menu_id: number;
-    menuToName: string;
-    type: string;
-    topping: string[];
     qty: number;
-    price: number;
-    total_price: number;
-    note: string;
+    name: string;
+    box_type: 'FULL' | 'HALF';
 }
 
-export default function SalesPage() {
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-    const [customerName, setCustomerName] = useState<string>("");
+interface Order {
+    id: number;
+    customer_name: string;
+    pickup_date: string;
+    pickup_time: string;
+    note: string | null;
+    status: 'PENDING' | 'CONFIRMED' | 'DONE' | 'CANCELLED';
+    created_at: string;
+    items: OrderItem[];
+}
 
-    // New state
-    const [menus, setMenus] = useState<Menu[]>([]);
-    const [variants, setVariants] = useState<Variant[]>([]);
-    const [selectedMenuId, setSelectedMenuId] = useState<string>("");
-    const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>([""]);
-    const [cartItems, setCartItems] = useState<CartItem[]>([]);
+function getTodayStr() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
 
-    // Receipt state
-    const [lastOrder, setLastOrder] = useState<any>(null);
+function formatDate(dateStr: string) {
+    const [y, m, d] = dateStr.split('-');
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    return date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
 
-    // Quantity and Note state
-    const [quantity, setQuantity] = useState<number>(1);
-    const [isCustomQuantity, setIsCustomQuantity] = useState<boolean>(false);
-    const [note, setNote] = useState<string>("");
-    const [selectedMenuPrice, setSelectedMenuPrice] = useState<number>(0);
+export default function SalesAnalyticsPage() {
+    const [orders, setOrders] = useState<Order[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showSidebar, setShowSidebar] = useState(false);
+    const userRoleData = useUserRole();
+    const [rangeStart, setRangeStart] = useState<string | null>(getTodayStr());
+    const [rangeEnd, setRangeEnd] = useState<string | null>(null);
+    const [activeStatus, setActiveStatus] = useState<string>('ALL');
 
     useEffect(() => {
-        // Reset cart and selected price on mount
-        localStorage.removeItem('cart_items');
-        localStorage.removeItem('selected_menu_price');
-
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
-        const fetchData = async () => {
-            try {
-                const menuRes = await fetch(`${apiUrl}/api/menu`);
-                const menuData = await menuRes.json();
-                if (menuData.status === 'ok') setMenus(menuData.data);
-
-                const variantRes = await fetch(`${apiUrl}/api/variants`);
-                const variantData = await variantRes.json();
-                if (variantData.status === 'ok') setVariants(variantData.data);
-            } catch (error) {
-                console.error("Failed to fetch data", error);
-            }
-        };
-
-        fetchData();
+        fetch(`${apiUrl}/api/orders`)
+            .then(r => r.json())
+            .then(j => { if (j.status === 'ok') setOrders(j.data); })
+            .catch(console.error)
+            .finally(() => setLoading(false));
     }, []);
 
-    const handleMenuChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const id = e.target.value;
-        setSelectedMenuId(id);
-        const menu = menus.find(m => m.id.toString() === id);
-        if (menu) {
-            setSelectedMenuPrice(menu.price);
-            localStorage.setItem('selected_menu_price', menu.price.toString());
+    const handleDateChip = (date: string) => {
+        if (!rangeStart || (rangeStart && rangeEnd)) {
+            // Reset: baru pilih start
+            setRangeStart(date);
+            setRangeEnd(null);
         } else {
-            setSelectedMenuPrice(0);
-        }
-        // Reset variants when menu changes
-        setSelectedVariantIds([""]);
-    };
-
-    const handleVariantChange = (index: number, value: string) => {
-        const newVariants = [...selectedVariantIds];
-        newVariants[index] = value;
-        setSelectedVariantIds(newVariants);
-    };
-
-    const addVariantField = () => {
-        if (selectedVariantIds.length < 3) {
-            setSelectedVariantIds([...selectedVariantIds, ""]);
-        }
-    };
-
-    const removeVariantField = (index: number) => {
-        const newVariants = selectedVariantIds.filter((_, i) => i !== index);
-        setSelectedVariantIds(newVariants);
-    };
-
-    const handleQuantityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const value = e.target.value;
-        if (value === "lebih") {
-            setIsCustomQuantity(true);
-            setQuantity(1);
-        } else {
-            setIsCustomQuantity(false);
-            setQuantity(Number(value));
-        }
-    };
-
-    const handleAddItem = () => {
-        if (!selectedMenuId) {
-            alert("Pilih menu terlebih dahulu");
-            return;
-        }
-
-        const menu = menus.find(m => m.id.toString() === selectedMenuId);
-        if (!menu) return;
-
-        // Get selected variant names
-        const selectedVariantNames = selectedVariantIds
-            .map(id => variants.find(v => v.id.toString() === id)?.variant_name)
-            .filter(Boolean) as string[];
-
-        const pricePerItem = selectedMenuPrice;
-        const totalPrice = pricePerItem * quantity;
-
-        let type = selectedVariantNames.length > 0 ? "variant" : "reguler";
-
-        if (selectedVariantNames.length === 0) {
-            type = "Original";
-        } else if (selectedVariantNames.length === 1) {
-            type = "1 Topping";
-        } else if (selectedVariantNames.length === 2) {
-            type = "Mix 2 Topping";
-        } else if (selectedVariantNames.length === 3) {
-            type = "Mix 3 Topping";
-        }
-
-        const newItem: CartItem = {
-            menu_id: menu.id,
-            menuToName: menu.name,
-            type: type,
-            topping: selectedVariantNames,
-            qty: quantity,
-            price: pricePerItem,
-            total_price: totalPrice,
-            note: note
-        };
-
-        // Get existing cart data
-        const rawCart = localStorage.getItem('cart_items');
-        let cartData = rawCart ? JSON.parse(rawCart) : { items: [], total_price_checkout: 0, customer_name: "" };
-
-        // Handle case if cart_items was previously stored as an array
-        if (Array.isArray(cartData)) {
-            cartData = { items: cartData, total_price_checkout: 0, customer_name: "" };
-        }
-
-        const updatedItems = [...cartData.items, newItem];
-
-        // Calculate total checkout price
-        const totalCheckoutPrice = updatedItems.reduce((sum: number, item: { total_price: number }) => sum + (item.total_price || 0), 0);
-
-        const newCartData = {
-            items: updatedItems,
-            total_price_checkout: totalCheckoutPrice,
-            customer_name: customerName
-        };
-
-        localStorage.setItem('cart_items', JSON.stringify(newCartData));
-        // Remove old key if present
-        localStorage.removeItem('total_price_checkout');
-
-        // Update local state for summary
-        setCartItems(updatedItems);
-
-        // Reset form
-        setSelectedMenuId("");
-        setSelectedVariantIds([""]);
-        setQuantity(1);
-        setIsCustomQuantity(false);
-        setNote("");
-    };
-
-    const handleOrder = async () => {
-        const rawCart = localStorage.getItem('cart_items');
-        if (!rawCart) {
-            alert("Keranjang kosong.");
-            return;
-        }
-
-        const cartData = JSON.parse(rawCart);
-        if (!cartData.items || cartData.items.length === 0) {
-            alert("Keranjang kosong.");
-            return;
-        }
-
-        if (!customerName) {
-            alert("Mohon isi nama pelanggan.");
-            return;
-        }
-
-        try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-            const response = await fetch(`${apiUrl}/api/transaction`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(cartData),
-            });
-
-            const result = await response.json();
-
-            if (result.status === 'ok') {
-                // Success logic
-                const orderData = {
-                    orderNumber: result.data.order_number,
-                    customerName: customerName,
-                    date: date,
-                    items: cartItems,
-                    total: cartItems.reduce((acc, item) => acc + item.total_price, 0)
-                };
-
-                setLastOrder(orderData); // Set last order for printing
-
-                alert("Order berhasil dibuat!");
-
-                // Reset state
-                setCartItems([]);
-                setCustomerName("");
-                setNote("");
-                setQuantity(1);
-                setIsCustomQuantity(false);
-                setSelectedMenuId("");
-                setSelectedVariantIds([""]);
-                setDate(new Date().toISOString().split('T')[0]);
-
-                // Clear localStorage
-                localStorage.removeItem('cart_items');
-                localStorage.removeItem('selected_menu_price');
-                localStorage.removeItem('total_price_checkout');
+            // Sudah ada start, set end
+            if (date < rangeStart) {
+                // Klik tanggal sebelum start → jadikan start baru
+                setRangeStart(date);
+                setRangeEnd(null);
+            } else if (date === rangeStart) {
+                // Klik tanggal sama → single day
+                setRangeEnd(null);
             } else {
-                alert(`Gagal membuat order: ${result.message}`);
+                setRangeEnd(date);
             }
-        } catch (error) {
-            console.error("Error submitting order:", error);
-            alert("Terjadi kesalahan saat membuat order.");
         }
     };
+
+    const availableDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort();
+    const effectiveEnd = rangeEnd ?? rangeStart;
+    const dayOrders = orders.filter(o => {
+        const matchDate = !rangeStart || (o.pickup_date >= rangeStart && o.pickup_date <= (effectiveEnd ?? rangeStart));
+        const matchStatus = activeStatus === 'ALL' || o.status === activeStatus;
+        return matchDate && matchStatus;
+    });
+    const totalOrders = dayOrders.length;
+    const totalItems = dayOrders.reduce((s, o) => s + o.items.reduce((si, i) => si + i.qty, 0), 0);
+
+    const timeSlotMap: Record<string, number> = {};
+    dayOrders.forEach(o => {
+        const slot = o.pickup_time ?? 'Unknown';
+        timeSlotMap[slot] = (timeSlotMap[slot] ?? 0) + 1;
+    });
+    const timeSlots = Object.entries(timeSlotMap).sort(([a], [b]) => a.localeCompare(b));
+    const maxSlotCount = Math.max(...timeSlots.map(([, c]) => c), 1);
+
+    const flavorMap: Record<string, number> = {};
+    dayOrders.forEach(o => {
+        o.items.forEach(item => {
+            flavorMap[item.name] = (flavorMap[item.name] ?? 0) + item.qty;
+        });
+    });
+    const topFlavors = Object.entries(flavorMap).sort(([, a], [, b]) => b - a);
+    const topFlavor = topFlavors[0];
+    const maxFlavorCount = Math.max(...topFlavors.map(([, c]) => c), 1);
+
+    const fullBoxCount = dayOrders.reduce((s, o) => s + o.items.filter(i => i.box_type === 'FULL').reduce((si, i) => si + i.qty, 0), 0);
+    const halfBoxCount = dayOrders.reduce((s, o) => s + o.items.filter(i => i.box_type === 'HALF').reduce((si, i) => si + i.qty, 0), 0);
+
+    // Chart: total orders per date — ikut filter status
+    const ordersByDate: Record<string, number> = {};
+    orders
+        .filter(o => activeStatus === 'ALL' || o.status === activeStatus)
+        .forEach(o => {
+            ordersByDate[o.pickup_date] = (ordersByDate[o.pickup_date] ?? 0) + 1;
+        });
+    const allDatesChart = Object.entries(ordersByDate).sort(([a], [b]) => a.localeCompare(b));
+    const maxDateCount = Math.max(...allDatesChart.map(([, c]) => c), 1);
+
+    function fmtChartDate(dateStr: string) {
+        const [y, m, d] = dateStr.split('-');
+        const date = new Date(Number(y), Number(m) - 1, Number(d));
+        return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    }
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center p-0 m-0">
-            {/* Modal or View for Success/Print */}
-            {lastOrder && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
-                        <div className="h-16 w-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-3xl mb-2">
-                            ✓
-                        </div>
-                        <h2 className="text-xl font-black text-primary uppercase">Transaksi Berhasil!</h2>
-                        <p className="text-center text-primary/70 mb-4">
-                            Order <strong>{lastOrder.orderNumber}</strong> atas nama <strong>{lastOrder.customerName}</strong> telah tersimpan.
-                        </p>
-
-                        <div className="w-full flex flex-col gap-3">
-                            <PrintReceipt
-                                data={lastOrder}
-                                onSuccess={() => { }}
-                            />
-
-                            <button
-                                onClick={() => setLastOrder(null)}
-                                className="h-12 w-full rounded-xl border-2 border-primary text-primary font-bold hover:bg-primary/5 transition-colors"
-                            >
-                                Tutup & Order Baru
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
+        <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
             <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
-                <header className="sticky top-0 z-50 bg-brand-yellow border-b border-primary/10">
-                    <div className="flex items-center p-4 justify-between w-full">
-                        <Link href="/" className="text-primary flex size-10 shrink-0 items-center justify-center cursor-pointer">
-                            <LuChevronLeft className="text-2xl font-bold" />
-                        </Link>
-                        <h1 className="text-primary text-lg font-extrabold leading-tight tracking-[-0.015em] flex-1 text-center uppercase">Input Penjualan</h1>
-                        <div className="size-10 shrink-0"></div>
+
+                <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
+
+                {/* Header */}
+                <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 pt-5 pb-4">
+                    <div className="flex justify-between items-center">
+                        <button
+                            onClick={() => setShowSidebar(true)}
+                            className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm"
+                        >
+                            <LuMenu className="text-primary text-lg" />
+                        </button>
+                        <h1 className="text-2xl font-extrabold tracking-tight text-primary">Sales</h1>
+                        <div className="w-10 h-10" />
                     </div>
                 </header>
 
-                <main className="flex-1 flex flex-col w-full overflow-y-auto pb-32">
-                    <div className="px-4 py-4">
-                        <div className="px-4 py-4">
-                            <label className="flex flex-col gap-2">
-                                <p className="text-primary text-sm font-bold uppercase tracking-wider">Nama Pelanggan</p>
-                                <input
-                                    className="flex h-12 w-full rounded-xl border-2 border-primary bg-white px-4 text-base font-semibold text-primary focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-primary/40 outline-none transition-all"
-                                    placeholder="Masukkan Nama Pelanggan"
-                                    type="text"
-                                    value={customerName}
-                                    onChange={(e) => setCustomerName(e.target.value)}
-                                />
-                            </label>
+                <main className="flex-1 px-4 py-5 space-y-5 pb-16">
+
+                    {/* Date Selector */}
+                    <section className="bg-white/60 rounded-2xl p-4 border border-primary/10">
+                        <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black mb-3">
+                            {rangeEnd && rangeEnd !== rangeStart
+                                ? `${formatDate(rangeStart!)} — ${formatDate(rangeEnd)}`
+                                : rangeStart ? formatDate(rangeStart) : 'Pilih Tanggal'}
+                        </p>
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                            {availableDates.length === 0 && (
+                                <p className="text-primary/40 text-xs">Belum ada data</p>
+                            )}
+                            {availableDates.map(date => {
+                                const [y, m, d] = date.split('-');
+                                const label = new Date(Number(y), Number(m) - 1, Number(d))
+                                    .toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+                                const isStart = date === rangeStart;
+                                const isEnd = date === rangeEnd;
+                                const end = rangeEnd ?? rangeStart;
+                                const inRange = rangeStart && end && date > rangeStart && date < end;
+                                return (
+                                    <button
+                                        key={date}
+                                        onClick={() => handleDateChip(date)}
+                                        className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition-all ${isStart || isEnd
+                                            ? 'bg-primary text-brand-yellow shadow-lg'
+                                            : inRange
+                                                ? 'bg-primary/30 text-primary'
+                                                : 'bg-primary/10 text-primary/60 hover:bg-primary/20'
+                                            }`}
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
                         </div>
-                    </div>
+                        {!rangeEnd && rangeStart && (
+                            <p className="text-[10px] text-primary/40 font-medium mt-2">Tap tanggal lain untuk set rentang akhir</p>
+                        )}
 
-                    <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-5 px-4 py-2">
-                        <label className="flex flex-col gap-2">
-                            <p className="text-primary text-sm font-bold uppercase tracking-wider">Tanggal</p>
-                            <div className="flex w-full items-stretch rounded-xl border-2 border-primary bg-white focus-within:ring-2 focus-within:ring-primary/20 group">
-                                <input
-                                    className="flex-1 bg-transparent border-none focus:ring-0 h-14 px-4 text-base font-semibold text-primary placeholder:text-primary/40 w-full"
-                                    type="date"
-                                    value={date}
-                                    onChange={(e) => setDate(e.target.value)}
-                                />
-                            </div>
-                        </label>
+                        {/* Status filter chips */}
+                        <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                            {(['ALL', 'UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(s => {
+                                const STATUS_STYLES: Record<string, string> = {
+                                    UNPAID: 'bg-orange-100 text-orange-600',
+                                    PAID: 'bg-teal-100 text-teal-600',
+                                    CONFIRMED: 'bg-green-100 text-green-600',
+                                    DONE: 'bg-blue-100 text-blue-600',
+                                    CANCELLED: 'bg-red-100 text-red-600',
+                                };
+                                const STATUS_LABEL: Record<string, string> = {
+                                    ALL: 'Semua', UNPAID: 'Unpaid', PAID: 'Paid', CONFIRMED: 'Confirmed', DONE: 'Done', CANCELLED: 'Cancelled',
+                                };
+                                const isActive = activeStatus === s;
+                                const chipStyle = isActive && s !== 'ALL'
+                                    ? STATUS_STYLES[s]
+                                    : isActive
+                                        ? 'bg-primary text-brand-yellow'
+                                        : 'bg-primary/10 text-primary/60 hover:bg-primary/20';
+                                return (
+                                    <button
+                                        key={s}
+                                        onClick={() => setActiveStatus(s)}
+                                        className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition-all ${chipStyle}`}
+                                    >
+                                        {STATUS_LABEL[s]}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </section>
 
-                        {/* Menu Dropdown */}
-                        <label className="flex flex-col gap-2">
-                            <p className="text-primary text-sm font-bold uppercase tracking-wider">Menu</p>
-                            <div className="relative group">
-                                <select
-                                    className="flex h-14 w-full appearance-none rounded-xl border-2 border-primary bg-white px-4 pr-10 text-base font-semibold text-primary focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all cursor-pointer"
-                                    value={selectedMenuId}
-                                    onChange={handleMenuChange}
-                                    required
-                                >
-                                    <option disabled value="">Pilih Menu</option>
-                                    {menus.map((menu) => (
-                                        <option key={menu.id} value={menu.id}>
-                                            {menu.name}
-                                        </option>
-                                    ))}
-                                </select>
-                                <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary">
-                                    <LuChevronDown className="text-xl font-bold" />
-                                </div>
-                            </div>
-                        </label>
+                    {loading ? (
+                        <p className="text-center text-primary/40 text-sm py-10">Memuat data...</p>
+                    ) : dayOrders.length === 0 ? (
+                        <div className="text-center py-16">
+                            <p className="text-primary/40 text-sm font-bold">Belum ada order untuk tanggal ini</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Chart: Orders per Date — Line Chart */}
+                            {allDatesChart.length > 0 && (() => {
+                                const W = 400, H = 120, PAD_L = 8, PAD_R = 8, PAD_T = 24, PAD_B = 28;
+                                const chartW = W - PAD_L - PAD_R;
+                                const chartH = H - PAD_T - PAD_B;
+                                const n = allDatesChart.length;
+                                const effectiveEnd2 = rangeEnd ?? rangeStart;
 
-                        {/* Variant Dropdown(s) */}
-                        <div className="flex flex-col gap-2">
-                            <div className="flex justify-between items-center">
-                                <p className="text-primary text-sm font-bold uppercase tracking-wider">Rasa / Varian</p>
-                            </div>
-                            {selectedVariantIds.map((variantId, index) => (
-                                <div key={index} className="flex gap-2">
-                                    <div className="relative group flex-1">
-                                        <select
-                                            className="flex h-14 w-full appearance-none rounded-xl border-2 border-primary bg-white px-4 pr-10 text-base font-semibold text-primary focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all cursor-pointer"
-                                            value={variantId}
-                                            onChange={(e) => handleVariantChange(index, e.target.value)}
+                                const pts = allDatesChart.map(([date, count], i) => {
+                                    const x = PAD_L + (n === 1 ? chartW / 2 : (i / (n - 1)) * chartW);
+                                    const y = PAD_T + chartH - (count / maxDateCount) * chartH;
+                                    const isInRange = rangeStart && effectiveEnd2
+                                        ? date >= rangeStart && date <= effectiveEnd2
+                                        : false;
+                                    const isPeak = count === maxDateCount;
+                                    return { x, y, date, count, isInRange, isPeak };
+                                });
+
+                                const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                                const areaPath = `${linePath} L${pts[pts.length - 1].x.toFixed(1)},${(PAD_T + chartH).toFixed(1)} L${pts[0].x.toFixed(1)},${(PAD_T + chartH).toFixed(1)} Z`;
+
+                                return (
+                                    <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <LuChartBar className="text-primary text-base" />
+                                            <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black">Total Order per Tanggal</p>
+                                        </div>
+                                        <svg
+                                            viewBox={`0 0 ${W} ${H}`}
+                                            className="w-full"
+                                            style={{ height: 140 }}
                                         >
-                                            <option disabled value="">Pilih Rasa</option>
-                                            {variants.map((v) => (
-                                                <option key={v.id} value={v.id}>
-                                                    {v.variant_name}
-                                                </option>
+                                            <defs>
+                                                <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stopColor="var(--color-primary, #1a1a1a)" stopOpacity="0.18" />
+                                                    <stop offset="100%" stopColor="var(--color-primary, #1a1a1a)" stopOpacity="0.01" />
+                                                </linearGradient>
+                                            </defs>
+
+                                            {/* Horizontal grid lines */}
+                                            {[0, 0.5, 1].map((t, i) => (
+                                                <line
+                                                    key={i}
+                                                    x1={PAD_L} y1={PAD_T + chartH - t * chartH}
+                                                    x2={W - PAD_R} y2={PAD_T + chartH - t * chartH}
+                                                    stroke="currentColor" strokeOpacity="0.06" strokeWidth="1"
+                                                />
                                             ))}
-                                        </select>
-                                        <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary">
-                                            <LuChevronDown className="text-xl font-bold" />
+
+                                            {/* Area fill */}
+                                            <path d={areaPath} fill="url(#lineGrad)" />
+
+                                            {/* Line */}
+                                            <path
+                                                d={linePath}
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeOpacity="0.25"
+                                                strokeWidth="2"
+                                                strokeLinejoin="round"
+                                                strokeLinecap="round"
+                                            />
+
+                                            {/* Active segment overlay */}
+                                            {pts.length > 1 && (() => {
+                                                const activePts = pts.filter(p => p.isInRange);
+                                                if (activePts.length < 1) return null;
+                                                const activePath = activePts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                                                return (
+                                                    <path
+                                                        d={activePath}
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        strokeOpacity="0.9"
+                                                        strokeWidth="2.5"
+                                                        strokeLinejoin="round"
+                                                        strokeLinecap="round"
+                                                    />
+                                                );
+                                            })()}
+
+                                            {/* Dots & labels */}
+                                            {pts.map((p, i) => (
+                                                <g key={p.date} style={{ cursor: 'pointer' }} onClick={() => handleDateChip(p.date)}>
+                                                    {/* Peak badge */}
+                                                    {p.isPeak && (
+                                                        <text x={p.x} y={p.y - 12} textAnchor="middle" fontSize="9" fontWeight="800" fill="currentColor" fillOpacity="0.7">
+                                                            ★ {p.count}
+                                                        </text>
+                                                    )}
+                                                    {/* Outer ring for active */}
+                                                    {p.isInRange && (
+                                                        <circle cx={p.x} cy={p.y} r={7} fill="currentColor" fillOpacity="0.15" />
+                                                    )}
+                                                    {/* Dot */}
+                                                    <circle
+                                                        cx={p.x} cy={p.y} r={p.isInRange ? 4.5 : 3}
+                                                        fill={p.isInRange ? 'currentColor' : 'white'}
+                                                        stroke="currentColor"
+                                                        strokeOpacity={p.isInRange ? 1 : 0.35}
+                                                        strokeWidth="1.5"
+                                                    />
+                                                    {/* Count label above non-peak active dots */}
+                                                    {p.isInRange && !p.isPeak && (
+                                                        <text x={p.x} y={p.y - 9} textAnchor="middle" fontSize="8" fontWeight="800" fill="currentColor" fillOpacity="0.7">
+                                                            {p.count}
+                                                        </text>
+                                                    )}
+                                                    {/* X-axis date label */}
+                                                    {(n <= 10 || i % Math.ceil(n / 8) === 0 || i === n - 1) && (
+                                                        <text
+                                                            x={p.x} y={H - 4}
+                                                            textAnchor="middle"
+                                                            fontSize="7.5"
+                                                            fontWeight="700"
+                                                            fill="currentColor"
+                                                            fillOpacity={p.isInRange ? 0.8 : 0.35}
+                                                        >
+                                                            {fmtChartDate(p.date)}
+                                                        </text>
+                                                    )}
+                                                </g>
+                                            ))}
+                                        </svg>
+                                    </section>
+                                );
+                            })()}
+                            {/* Summary Cards */}
+                            <section className="grid grid-cols-2 gap-3">
+                                <div className="bg-white/60 p-5 rounded-2xl border border-primary/10">
+                                    <div className="flex items-center gap-2 mb-3 text-primary/50">
+                                        <LuClipboardList className="text-lg" />
+                                        <span className="text-[10px] font-black uppercase tracking-wide">Total Order</span>
+                                    </div>
+                                    <p className="text-4xl font-black text-primary">{totalOrders}</p>
+                                </div>
+                                <div className="bg-white/60 p-5 rounded-2xl border border-primary/10">
+                                    <div className="flex items-center gap-2 mb-3 text-primary/50">
+                                        <LuPackage className="text-lg" />
+                                        <span className="text-[10px] font-black uppercase tracking-wide">Total Item</span>
+                                    </div>
+                                    <p className="text-4xl font-black text-primary">{totalItems}</p>
+                                </div>
+
+                                <div className="bg-white/60 p-5 rounded-2xl border border-primary/10">
+                                    <p className="text-[10px] font-black uppercase tracking-wide text-primary/50 mb-3">Full Box</p>
+                                    <p className="text-3xl font-black text-primary">{fullBoxCount}</p>
+                                    <p className="text-[10px] text-primary/40 mt-1 font-bold">box</p>
+                                </div>
+                                <div className="bg-white/60 p-5 rounded-2xl border border-primary/10">
+                                    <p className="text-[10px] font-black uppercase tracking-wide text-primary/50 mb-3">Half Box</p>
+                                    <p className="text-3xl font-black text-primary">{halfBoxCount}</p>
+                                    <p className="text-[10px] text-primary/40 mt-1 font-bold">box</p>
+                                </div>
+
+                                {topFlavor && (
+                                    <div className="col-span-2 bg-primary p-5 rounded-2xl shadow-lg flex items-center justify-between">
+                                        <div>
+                                            <div className="flex items-center gap-2 text-brand-yellow/60 mb-1">
+                                                <LuStar className="text-sm" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest">Most Popular</span>
+                                            </div>
+                                            <p className="text-xl font-black text-brand-yellow leading-tight">{topFlavor[0]}</p>
+                                            <p className="text-xs text-brand-yellow/60 font-bold mt-0.5">{topFlavor[1]}x dipesan</p>
+                                        </div>
+                                        <div className="w-14 h-14 bg-brand-yellow/10 rounded-2xl flex items-center justify-center text-2xl">
+                                            🍌
                                         </div>
                                     </div>
+                                )}
+                            </section>
 
-                                    {index === selectedVariantIds.length - 1 && selectedVariantIds.length < 3 && (
-                                        <button
-                                            type="button"
-                                            onClick={addVariantField}
-                                            className="h-14 w-14 flex items-center justify-center rounded-xl bg-primary text-brand-yellow text-2xl font-bold border-2 border-primary hover:bg-primary/90 transition-colors"
-                                        >
-                                            <LuPlus />
-                                        </button>
-                                    )}
-                                    {index > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => removeVariantField(index)}
-                                            className="h-14 w-14 flex items-center justify-center rounded-xl bg-red-500 text-white text-xl font-bold border-2 border-red-500 hover:bg-red-600 transition-colors"
-                                        >
-                                            <LuTrash />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                            {/* Orders per Time Slot Chart */}
+                            {timeSlots.length > 0 && (
+                                <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
+                                    <div className="mb-5">
+                                        <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black">Orders per Waktu Pickup</p>
+                                        <p className="text-3xl font-black text-primary mt-1">{totalOrders} <span className="text-sm font-bold text-primary/40">order</span></p>
+                                    </div>
+                                    <div className="flex gap-3 items-end h-36 px-1">
+                                        {timeSlots.map(([slot, count]) => {
+                                            const heightPct = Math.round((count / maxSlotCount) * 100);
+                                            const isPeak = count === maxSlotCount;
+                                            return (
+                                                <div key={slot} className="flex flex-col items-center gap-2 flex-1 h-full justify-end relative">
+                                                    {isPeak && (
+                                                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-brand-yellow text-[9px] font-black px-2 py-0.5 rounded-full shadow whitespace-nowrap">
+                                                            ⭐ {count}
+                                                        </div>
+                                                    )}
+                                                    <div
+                                                        className={`w-full rounded-t-lg transition-all ${isPeak ? 'bg-primary shadow-lg' : 'bg-primary/20'}`}
+                                                        style={{ height: `${heightPct}%`, minHeight: '8px' }}
+                                                    />
+                                                    <span className={`text-[9px] font-black ${isPeak ? 'text-primary' : 'text-primary/40'}`}>{slot}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+                            )}
 
-                        {/* Quantity Dropdown */}
-                        <label className="flex flex-col gap-2">
-                            <p className="text-primary text-sm font-bold uppercase tracking-wider">Jumlah</p>
-                            <div className="relative group">
-                                <select
-                                    className="flex h-14 w-full appearance-none rounded-xl border-2 border-primary bg-white px-4 pr-10 text-base font-semibold text-primary focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all cursor-pointer"
-                                    value={isCustomQuantity ? "lebih" : quantity}
-                                    onChange={handleQuantityChange}
-                                >
-                                    {[1, 2, 3, 4, 5].map(num => (
-                                        <option key={num} value={num}>{num}</option>
-                                    ))}
-                                    <option value="lebih">Lebih dari 5</option>
-                                </select>
-                                <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary">
-                                    <LuChevronDown className="text-xl font-bold" />
-                                </div>
-                            </div>
-                        </label>
+                            {/* Top Flavors */}
+                            {topFlavors.length > 0 && (
+                                <section className="bg-white/60 rounded-2xl overflow-hidden border border-primary/10">
+                                    <div className="px-5 py-4 border-b border-primary/10 flex items-center gap-2">
+                                        <LuTrendingUp className="text-primary text-base" />
+                                        <h4 className="font-black text-sm tracking-tight text-primary">Top Flavor Hari Ini</h4>
+                                    </div>
+                                    <div className="divide-y divide-primary/5">
+                                        {topFlavors.slice(0, 6).map(([name, count], idx) => {
+                                            const barPct = Math.round((count / maxFlavorCount) * 100);
+                                            return (
+                                                <div key={name} className="px-5 py-4 flex items-center gap-4">
+                                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${idx === 0 ? 'bg-primary text-brand-yellow' : 'bg-primary/10 text-primary/40'}`}>
+                                                        {String(idx + 1).padStart(2, '0')}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-black text-primary truncate">{name}</p>
+                                                        <div className="flex items-center gap-2 mt-1.5">
+                                                            <div className="flex-1 h-1.5 bg-primary/10 rounded-full">
+                                                                <div
+                                                                    className={`h-full rounded-full ${idx === 0 ? 'bg-primary' : 'bg-primary/40'}`}
+                                                                    style={{ width: `${barPct}%` }}
+                                                                />
+                                                            </div>
+                                                            <span className="text-[10px] font-black text-primary/40 shrink-0">{count}x</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+                            )}
 
-                        {/* Custom Quantity Input */}
-                        {isCustomQuantity && (
-                            <div className="flex flex-col gap-2">
-                                <input
-                                    className="flex h-14 w-full rounded-xl border-2 border-primary bg-white px-4 text-base font-semibold text-primary focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-primary/40 outline-none transition-all"
-                                    placeholder="Masukkan jumlah"
-                                    type="number"
-                                    min="1"
-                                    value={quantity}
-                                    onChange={(e) => setQuantity(Number(e.target.value))}
-                                />
-                            </div>
-                        )}
-
-                        {/* Total Price Display */}
-                        <div className="flex flex-col gap-2">
-                            <p className="text-primary text-sm font-bold uppercase tracking-wider">Total</p>
-                            <div className="flex h-14 w-full items-center rounded-xl border-2 border-primary bg-primary/5 px-4">
-                                <span className="text-lg font-black text-primary">
-                                    Rp {(quantity * selectedMenuPrice).toLocaleString('id-ID')}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Note Field */}
-                        <label className="flex flex-col gap-2">
-                            <p className="text-primary text-sm font-bold uppercase tracking-wider">Catatan (Optional)</p>
-                            <input
-                                className="flex h-14 w-full rounded-xl border-2 border-primary bg-white px-4 text-base font-semibold text-primary focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-primary/40 outline-none transition-all"
-                                placeholder="Contoh: Jangan terlalu manis"
-                                type="text"
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
-                            />
-                        </label>
-
-                        {/* Order Summary */}
-                        {cartItems.length > 0 && (
-                            <div className="flex flex-col gap-2 rounded-xl bg-white p-4 items-start shadow-sm border-2 border-primary/20">
-                                <div className="flex w-full justify-between items-center border-b-2 border-primary/10 pb-2 mb-2">
-                                    <p className="text-primary text-sm font-bold uppercase tracking-wider">
-                                        Ringkasan Pesanan
-                                    </p>
-                                </div>
-                                <div className="flex flex-col gap-1 w-full text-sm text-primary">
-                                    <p className="font-bold mb-2">
-                                        Nama: <span className="font-normal">{customerName || "-"}</span>
-                                    </p>
-                                    <p className="font-bold mb-1">Item:</p>
-                                    <ul className="list-disc pl-4 space-y-1">
-                                        {cartItems.map((item, idx) => (
-                                            <li key={idx}>
-                                                <span className="font-semibold">{item.menuToName}</span>
-                                                {' '}
-                                                <span className="text-primary/80">
-                                                    {item.topping && item.topping.length > 0
-                                                        ? item.topping.join(', ')
-                                                        : item.type}
-                                                </span>
-                                                {' '}
-                                                <span className="font-bold">x {item.qty}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="mt-4 mb-8 flex flex-col gap-4">
-                            <button
-                                type="button"
-                                onClick={handleAddItem}
-                                className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary text-brand-yellow text-lg font-black uppercase shadow-[0_4px_0_0_rgba(45,90,39,0.3)] hover:brightness-110 active:translate-y-1 active:shadow-none transition-all"
-                            >
-                                <LuPlus className="text-xl" />
-                                Tambah Item
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={handleOrder}
-                                className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-brand-yellow text-primary border-4 border-primary text-lg font-black uppercase shadow-[0_4px_0_0_rgba(45,90,39,0.3)] hover:brightness-105 active:translate-y-1 active:shadow-none transition-all"
-                            >
-                                Order
-                            </button>
-                        </div>
-                    </form>
+                            {/* Order Status Breakdown */}
+                            <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
+                                <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black mb-4">Status Order</p>
+                                {(['UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(status => {
+                                    const count = dayOrders.filter(o => o.status === status).length;
+                                    const pct = totalOrders > 0 ? Math.round((count / totalOrders) * 100) : 0;
+                                    const colors: Record<string, string> = {
+                                        UNPAID: 'bg-orange-400',
+                                        PAID: 'bg-teal-400',
+                                        CONFIRMED: 'bg-emerald-500',
+                                        DONE: 'bg-blue-400',
+                                        CANCELLED: 'bg-red-500',
+                                    };
+                                    if (count === 0) return null;
+                                    return (
+                                        <div key={status} className="flex items-center gap-3 mb-3 last:mb-0">
+                                            <div className={`w-2 h-2 rounded-full shrink-0 ${colors[status]}`} />
+                                            <span className="text-xs font-black text-primary/50 w-20 uppercase">{status}</span>
+                                            <div className="flex-1 h-1.5 bg-primary/10 rounded-full">
+                                                <div className={`h-full rounded-full ${colors[status]}`} style={{ width: `${pct}%` }} />
+                                            </div>
+                                            <span className="text-xs font-black text-primary w-6 text-right">{count}</span>
+                                        </div>
+                                    );
+                                })}
+                            </section>
+                        </>
+                    )}
                 </main>
-
-                <BottomNav />
             </div>
         </div>
     );

@@ -25,6 +25,7 @@ interface SidebarProps {
 
 const NAV_ITEMS = [
     { label: 'Home', icon: LuHouse, href: '/orders', key: 'orders' },
+    { label: 'Sales', icon: LuClipboardList, href: '/sales', key: 'sales' },
     { label: 'Analytics', icon: LuChartBar, href: '/analytics', key: 'analytics' },
     { label: 'Finance', icon: LuBanknote, href: '/finance', key: 'finance' },
     { label: 'Cash Flow', icon: LuArrowLeftRight, href: '/cashflow', key: 'cashflow' },
