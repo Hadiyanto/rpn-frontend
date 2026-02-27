@@ -59,11 +59,12 @@ export default function GuestOrderPage() {
     const [submittedOrder, setSubmittedOrder] = useState<any>(null);
     const [showConfirm, setShowConfirm] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
+    const [uploading, setUploading] = useState(false);
 
     const [form, setForm] = useState({
         customer_name: '',
         pickup_date: '', // Set via useEffect to prevent hydration error
-        pickup_time: '11:00',
+        pickup_time: ':', // Intentionally empty hour and minute
         note: '',
         payment_method: '' as '' | 'TRANSFER' | 'CASH',
         pesanan: [emptyItem()],
@@ -111,6 +112,13 @@ export default function GuestOrderPage() {
             setErrorMessage('Tanggal pickup wajib diisi');
             return window.scrollTo({ top: 0, behavior: 'smooth' });
         }
+
+        const [hh, mm] = form.pickup_time.split(':');
+        if (!hh || !mm) {
+            setErrorMessage('Waktu pickup (Jam & Menit) wajib dipilih');
+            return window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
         const validItems = form.pesanan.filter(p => p.name.trim().length > 0 && p.qty > 0);
         if (validItems.length === 0) {
             setErrorMessage('Minimal 1 pesanan (dengan nama) wajib diisi');
@@ -154,6 +162,50 @@ export default function GuestOrderPage() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleUploadTransfer = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !submittedOrder) return;
+
+        setUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+            // 1. Upload to Cloudinary
+            const uploadRes = await fetch(`${apiUrl}/api/upload-image`, {
+                method: 'POST',
+                body: formData,
+            });
+            const uploadJson = await uploadRes.json();
+
+            if (uploadJson.status !== 'ok') {
+                alert('Gagal mengupload gambar');
+                setUploading(false);
+                return;
+            }
+
+            // 2. Update Order
+            const updateRes = await fetch(`${apiUrl}/api/order/${submittedOrder.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transfer_img_url: uploadJson.imageUrl }),
+            });
+
+            const updateJson = await updateRes.json();
+            if (updateJson.status === 'ok') {
+                setSubmittedOrder({ ...submittedOrder, transfer_img_url: uploadJson.imageUrl });
+            } else {
+                alert('Gagal memperbarui pesanan dengan bukti transfer');
+            }
+        } catch {
+            alert('Terjadi kesalahan jaringan saat mengupload bukti');
+        } finally {
+            setUploading(false);
         }
     };
 
@@ -208,28 +260,49 @@ export default function GuestOrderPage() {
                         </div>
                     </div>
 
-                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center mb-6">
-                        <p className="text-sm font-semibold text-blue-900 mb-2">Silahkan transfer ke rekening BCA:</p>
-                        <p className="text-2xl font-black text-blue-700 tracking-wider mb-1">1234567</p>
-                        <p className="text-sm font-bold text-blue-800">a/n Anggita Prima</p>
-                    </div>
+                    {submittedOrder.payment_method === 'TRANSFER' && (
+                        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center mb-6">
+                            <p className="text-sm font-semibold text-blue-900 mb-2">Silahkan transfer ke rekening BCA:</p>
+                            <p className="text-2xl font-black text-blue-700 tracking-wider mb-1">1234567</p>
+                            <p className="text-sm font-bold text-blue-800">a/n Anggita Prima</p>
 
-                    <button
-                        onClick={() => {
-                            setSubmittedOrder(null);
-                            setForm({
-                                customer_name: '',
-                                pickup_date: getTodayStr(),
-                                pickup_time: '11:00',
-                                note: '',
-                                payment_method: '',
-                                pesanan: [emptyItem()],
-                            });
-                        }}
-                        className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5"
-                    >
-                        Buat Pesanan Baru
-                    </button>
+                            {!submittedOrder.transfer_img_url ? (
+                                <div className="mt-4 pt-4 border-t border-blue-200">
+                                    <p className="text-xs text-blue-800 mb-2 font-bold">Upload Bukti Transfer Anda di Sini:</p>
+                                    <label className={`block w-full text-sm font-bold text-center py-3 rounded-xl cursor-pointer transition-all ${uploading ? 'bg-blue-200 text-blue-500' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md'}`}>
+                                        {uploading ? 'Sedang Mengupload...' : 'Pilih Foto / Gambar'}
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleUploadTransfer} disabled={uploading} />
+                                    </label>
+                                </div>
+                            ) : (
+                                <div className="mt-4 pt-4 border-t border-blue-200">
+                                    <div className="flex items-center justify-center gap-1.5 text-green-700 font-bold text-sm bg-green-100 py-2.5 rounded-xl border border-green-200">
+                                        <LuCheck className="text-lg" />
+                                        Bukti Transfer Berhasil Disimpan
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {(submittedOrder.payment_method !== 'TRANSFER' || submittedOrder.transfer_img_url) && (
+                        <button
+                            onClick={() => {
+                                setSubmittedOrder(null);
+                                setForm({
+                                    customer_name: '',
+                                    pickup_date: getTodayStr(),
+                                    pickup_time: ':',
+                                    note: '',
+                                    payment_method: '',
+                                    pesanan: [emptyItem()],
+                                });
+                            }}
+                            className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5"
+                        >
+                            Buat Pesanan Baru
+                        </button>
+                    )}
                 </div>
             </div>
         );
@@ -292,13 +365,14 @@ export default function GuestOrderPage() {
                             <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu *</label>
                             <div className="flex gap-1 h-11 rounded-xl border-2 border-primary/10 bg-primary/5 overflow-hidden">
                                 <select
-                                    value={form.pickup_time.split(':')[0] ?? '11'}
+                                    value={form.pickup_time.split(':')[0] || ''}
                                     onChange={e => {
-                                        const mm = form.pickup_time.split(':')[1] ?? '00';
+                                        const mm = form.pickup_time.split(':')[1] || '';
                                         setForm(f => ({ ...f, pickup_time: `${e.target.value}:${mm}` }));
                                     }}
                                     className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none appearance-none m-0 p-0"
                                 >
+                                    <option value="" disabled>--</option>
                                     {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
                                         const h = String(hNum).padStart(2, '0');
                                         return <option key={h} value={h}>{h}</option>;
@@ -306,13 +380,14 @@ export default function GuestOrderPage() {
                                 </select>
                                 <span className="flex items-center text-primary font-black text-sm">:</span>
                                 <select
-                                    value={form.pickup_time.split(':')[1] ?? '00'}
+                                    value={form.pickup_time.split(':')[1] || ''}
                                     onChange={e => {
-                                        const hh = form.pickup_time.split(':')[0] ?? '11';
+                                        const hh = form.pickup_time.split(':')[0] || '';
                                         setForm(f => ({ ...f, pickup_time: `${hh}:${e.target.value}` }));
                                     }}
                                     className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none appearance-none m-0 p-0"
                                 >
+                                    <option value="" disabled>--</option>
                                     {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => (
                                         <option key={m} value={m}>{m}</option>
                                     ))}
