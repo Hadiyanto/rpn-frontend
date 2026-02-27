@@ -701,10 +701,10 @@ export default function OrdersPage() {
                                                         });
                                                         setShowSheet(true);
                                                     }}
-                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 text-primary text-xs font-black uppercase tracking-wider active:scale-95 transition-all"
+                                                    className="flex-1 flex flex-col items-center justify-center bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-xl transition-colors active:scale-95"
                                                 >
-                                                    <LuPencil className="text-sm" />
-                                                    Edit Order
+                                                    <LuPencil className="text-xl mb-1" />
+                                                    <span className="text-[10px] font-black uppercase text-center leading-tight">Edit Order</span>
                                                 </button>
                                                 <button
                                                     onClick={async () => {
@@ -725,10 +725,12 @@ export default function OrdersPage() {
                                                         }
                                                     }}
                                                     disabled={printingId === order.id}
-                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-brand-yellow text-xs font-black uppercase tracking-wider shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                                                    className="flex-1 flex flex-col items-center justify-center bg-primary hover:bg-primary/90 text-brand-yellow px-4 py-2 rounded-xl transition-colors active:scale-95 disabled:opacity-50"
                                                 >
-                                                    <LuPrinter className="text-sm" />
-                                                    {printingId === order.id ? 'Printing...' : 'Cetak Order'}
+                                                    <LuPrinter className="text-xl mb-1" />
+                                                    <span className="text-[10px] font-black uppercase text-center leading-tight">
+                                                        {printingId === order.id ? 'Printing...' : 'Cetak Order'}
+                                                    </span>
                                                 </button>
                                             </div>
                                         </div>
