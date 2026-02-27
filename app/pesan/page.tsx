@@ -102,10 +102,20 @@ export default function GuestOrderPage() {
     };
 
     const handleReviewOrder = () => {
-        if (!form.customer_name.trim()) return alert('Nama customer wajib diisi');
-        if (!form.pickup_date) return alert('Tanggal pickup wajib diisi');
+        setErrorMessage('');
+        if (!form.customer_name.trim()) {
+            setErrorMessage('Nama customer wajib diisi');
+            return window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        if (!form.pickup_date) {
+            setErrorMessage('Tanggal pickup wajib diisi');
+            return window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
         const validItems = form.pesanan.filter(p => p.name.trim().length > 0 && p.qty > 0);
-        if (validItems.length === 0) return alert('Minimal 1 pesanan (dengan nama) wajib diisi');
+        if (validItems.length === 0) {
+            setErrorMessage('Minimal 1 pesanan (dengan nama) wajib diisi');
+            return window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
 
         setShowConfirm(true);
     };
