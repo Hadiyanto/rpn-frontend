@@ -42,6 +42,7 @@ interface Order {
     note: string | null;
     status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE';
     payment_method: 'TRANSFER' | 'CASH' | null;
+    transfer_img_url: string | null;
     created_at: string;
     items: OrderItem[];
 }
@@ -630,6 +631,14 @@ export default function OrdersPage() {
                                                 {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })}
                                             </span>
                                         </div>
+                                        {order.transfer_img_url && (
+                                            <div className="pt-2 flex justify-between items-start text-xs border-t border-primary/5 mt-2">
+                                                <span className="text-primary/50 mt-1">Bukti Transfer</span>
+                                                <a href={order.transfer_img_url} target="_blank" rel="noopener noreferrer" className="block w-16 h-16 rounded-lg overflow-hidden border border-primary/10 hover:opacity-80 transition-opacity">
+                                                    <img src={order.transfer_img_url} alt="Bukti Transfer" className="w-full h-full object-cover" />
+                                                </a>
+                                            </div>
+                                        )}
                                         <div className="pt-3 border-t border-primary/5 flex items-center justify-between">
                                             <div className="flex gap-2">
                                                 {order.status === 'UNPAID' && (
