@@ -8,6 +8,8 @@ import {
     LuPackage,
     LuCheck,
 } from 'react-icons/lu';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 interface OrderItem {
     box_type: 'FULL' | 'HALF';
@@ -68,22 +70,35 @@ export default function GuestOrderPage() {
 
     const [menus, setMenus] = useState<any[]>([]);
     const [variants, setVariants] = useState<any[]>([]);
+    const [quotas, setQuotas] = useState<any[]>([]);
 
     useEffect(() => {
-        // Set date to today on client to prevent hydration mismatch
-        setForm(f => ({ ...f, pickup_date: getTodayStr() }));
-
         // Fetch menus and variants
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
         Promise.all([
             fetch(`${apiUrl}/api/menu`).then(r => r.json()),
             fetch(`${apiUrl}/api/variants`).then(r => r.json()),
-        ]).then(([mjson, vjson]) => {
+            fetch(`${apiUrl}/api/daily-quota`).then(r => r.json()),
+        ]).then(([mjson, vjson, qjson]) => {
             if (mjson.status === 'ok') setMenus(mjson.data);
             if (vjson.status === 'ok') setVariants(vjson.data);
+            if (qjson.status === 'ok') setQuotas(qjson.data);
         }).catch(console.error);
     }, []);
+
+    // Filter to only enable dates that exist in the daily_quota table and have qty > 0
+    const filterPassedDates = (time: Date) => {
+        const local = new Date(time.getTime() - time.getTimezoneOffset() * 60000);
+        const dateString = local.toISOString().split('T')[0];
+        const todayStr = getTodayStr();
+
+        // Must be today or future
+        if (dateString < todayStr) return false;
+
+        const q = quotas.find(q => q.date === dateString);
+        return q ? q.qty > 0 : false;
+    };
 
     const handleReviewOrder = () => {
         if (!form.customer_name.trim()) return alert('Nama customer wajib diisi');
@@ -184,14 +199,23 @@ export default function GuestOrderPage() {
 
                     {/* Pickup Date & Time */}
                     <div className="flex gap-3">
-                        <div className="flex-1 space-y-1.5">
+                        <div className="flex-1 space-y-1.5 flex flex-col">
                             <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pickup *</label>
-                            <input
-                                type="date"
-                                className="w-full h-11 min-h-[44px] px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 appearance-none m-0"
-                                value={form.pickup_date}
-                                onChange={e => setForm(f => ({ ...f, pickup_date: e.target.value }))}
-                            />
+                            <div className="flex-1 min-h-[44px]">
+                                <DatePicker
+                                    selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null}
+                                    onChange={(date: Date | null) => {
+                                        if (date) {
+                                            const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+                                            setForm(f => ({ ...f, pickup_date: local.toISOString().split('T')[0] }));
+                                        }
+                                    }}
+                                    filterDate={filterPassedDates}
+                                    dateFormat="dd/MM/yyyy"
+                                    className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                                    placeholderText="Pilih Tanggal"
+                                />
+                            </div>
                         </div>
                         <div className="w-36 space-y-1.5">
                             <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu *</label>
@@ -204,9 +228,10 @@ export default function GuestOrderPage() {
                                     }}
                                     className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none appearance-none m-0 p-0"
                                 >
-                                    {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
-                                        <option key={h} value={h}>{h}</option>
-                                    ))}
+                                    {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
+                                        const h = String(hNum).padStart(2, '0');
+                                        return <option key={h} value={h}>{h}</option>;
+                                    })}
                                 </select>
                                 <span className="flex items-center text-primary font-black text-sm">:</span>
                                 <select
