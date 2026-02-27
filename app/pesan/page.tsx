@@ -56,8 +56,9 @@ function normalizeVariant(name: string) {
 
 export default function GuestOrderPage() {
     const [submitting, setSubmitting] = useState(false);
-    const [success, setSuccess] = useState(false);
+    const [submittedOrder, setSubmittedOrder] = useState<any>(null);
     const [showConfirm, setShowConfirm] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
 
     const [form, setForm] = useState({
         customer_name: '',
@@ -111,6 +112,7 @@ export default function GuestOrderPage() {
 
     const submitOrder = async () => {
         setSubmitting(true);
+        setErrorMessage('');
         try {
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -130,29 +132,81 @@ export default function GuestOrderPage() {
 
             if (json.status === 'ok') {
                 setShowConfirm(false);
-                setSuccess(true);
+                setSubmittedOrder(json.data);
             } else {
-                alert(json.message || 'Gagal menyimpan pesanan');
+                setShowConfirm(false);
+                setErrorMessage(json.message || 'Gagal menyimpan pesanan');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         } catch {
-            alert('Gagal menghubungi server');
+            setShowConfirm(false);
+            setErrorMessage('Gagal menghubungi server');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         } finally {
             setSubmitting(false);
         }
     };
 
-    if (success) {
+    if (submittedOrder) {
+        // Safe check for price, assuming variant calculation is same
+        const totalPrice = submittedOrder.items.reduce((sum: number, item: any) => sum + (menus.find(m => m.name === item.box_type)?.price || 0) * item.qty, 0);
+
         return (
             <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center justify-center p-4">
-                <div className="w-full max-w-[480px] bg-white rounded-3xl p-8 text-center shadow-xl">
-                    <LuCheck className="text-6xl text-green-500 mx-auto mb-4" />
-                    <h2 className="text-2xl font-extrabold text-primary mb-2">Terima Kasih!</h2>
-                    <p className="text-primary/70 mb-8">
-                        Pesanan Kak <strong>{form.customer_name}</strong> telah berhasil kami terima.
-                    </p>
+                <div className="w-full max-w-[480px] bg-white rounded-3xl p-8 shadow-xl">
+                    <div className="text-center mb-6">
+                        <LuCheck className="text-6xl text-green-500 mx-auto mb-4" />
+                        <h2 className="text-2xl font-extrabold text-primary mb-2">Terima Kasih!</h2>
+                        <p className="text-primary/70">
+                            Pesanan Kak <strong>{submittedOrder.customer_name}</strong> telah berhasil kami terima.
+                        </p>
+                    </div>
+
+                    <div className="bg-primary/5 rounded-2xl p-5 mb-6 space-y-4">
+                        <div className="border-b border-primary/10 pb-3 flex justify-between">
+                            <span className="text-sm text-primary/60 font-medium">Order ID</span>
+                            <span className="text-sm font-black text-primary">#{submittedOrder.id}</span>
+                        </div>
+                        <div className="border-b border-primary/10 pb-3 flex justify-between">
+                            <span className="text-sm text-primary/60 font-medium">Nama</span>
+                            <span className="text-sm font-bold text-primary text-right">{submittedOrder.customer_name}</span>
+                        </div>
+                        <div className="border-b border-primary/10 pb-3">
+                            <span className="text-[10px] font-black uppercase text-primary/60 block mb-2">Item Pesanan</span>
+                            <div className="space-y-2">
+                                {submittedOrder.items.map((item: any, idx: number) => {
+                                    const price = menus.find(m => m.name === item.box_type)?.price || 0;
+                                    return (
+                                        <div key={idx} className="flex justify-between items-start gap-3">
+                                            <div className="flex-1">
+                                                <div className="font-bold text-primary text-sm">{item.qty}x Box {item.box_type === 'FULL' ? 'Besar' : 'Kecil'}</div>
+                                                <div className="text-xs text-primary/70">{item.name}</div>
+                                            </div>
+                                            <div className="font-bold text-primary text-sm whitespace-nowrap">
+                                                Rp {(price * item.qty).toLocaleString('id-ID')}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="flex justify-between pt-1">
+                            <span className="font-black text-primary">Total Harga</span>
+                            <span className="font-black text-primary text-lg">
+                                Rp {totalPrice.toLocaleString('id-ID')}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center mb-6">
+                        <p className="text-sm font-semibold text-blue-900 mb-2">Silahkan transfer ke rekening BCA:</p>
+                        <p className="text-2xl font-black text-blue-700 tracking-wider mb-1">1234567</p>
+                        <p className="text-sm font-bold text-blue-800">a/n Anggita Prima</p>
+                    </div>
+
                     <button
                         onClick={() => {
-                            setSuccess(false);
+                            setSubmittedOrder(null);
                             setForm({
                                 customer_name: '',
                                 pickup_date: getTodayStr(),
@@ -162,7 +216,7 @@ export default function GuestOrderPage() {
                                 pesanan: [emptyItem()],
                             });
                         }}
-                        className="w-full h-12 bg-primary/10 text-primary font-bold rounded-xl active:scale-95 transition-all"
+                        className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5"
                     >
                         Buat Pesanan Baru
                     </button>
@@ -184,6 +238,13 @@ export default function GuestOrderPage() {
 
                 {/* Form */}
                 <div className="flex-1 px-5 py-6 space-y-6">
+
+                    {/* Error Message */}
+                    {errorMessage && (
+                        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm font-semibold animate-in fade-in slide-in-from-top-2">
+                            {errorMessage}
+                        </div>
+                    )}
 
                     {/* Customer Name */}
                     <div className="space-y-1.5">
