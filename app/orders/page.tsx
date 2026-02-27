@@ -134,6 +134,7 @@ export default function OrdersPage() {
     const [printingId, setPrintingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [showSidebar, setShowSidebar] = useState(false);
+    const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const userRoleData = useUserRole();
     const [seenOrderCount, setSeenOrderCount] = useState<number>(() => {
         if (typeof window === 'undefined') return 0;
@@ -634,9 +635,12 @@ export default function OrdersPage() {
                                         {order.transfer_img_url && (
                                             <div className="pt-2 flex justify-between items-start text-xs border-t border-primary/5 mt-2">
                                                 <span className="text-primary/50 mt-1">Bukti Transfer</span>
-                                                <a href={order.transfer_img_url} target="_blank" rel="noopener noreferrer" className="block w-16 h-16 rounded-lg overflow-hidden border border-primary/10 hover:opacity-80 transition-opacity">
+                                                <button
+                                                    onClick={() => setSelectedImage(order.transfer_img_url!)}
+                                                    className="block w-16 h-16 rounded-lg overflow-hidden border border-primary/10 hover:opacity-80 transition-opacity"
+                                                >
                                                     <img src={order.transfer_img_url} alt="Bukti Transfer" className="w-full h-full object-cover" />
-                                                </a>
+                                                </button>
                                             </div>
                                         )}
                                         <div className="pt-3 border-t border-primary/5 flex items-center justify-between">
@@ -935,6 +939,29 @@ export default function OrdersPage() {
 
                 {/* <BottomNav /> */}
             </div>
+
+            {/* Image Preview Modal */}
+            {selectedImage && (
+                <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+                    onClick={() => setSelectedImage(null)}
+                >
+                    <div className="relative max-w-full max-h-full">
+                        <button
+                            onClick={() => setSelectedImage(null)}
+                            className="absolute -top-12 right-0 sm:-right-12 w-10 h-10 bg-white/20 hover:bg-white/40 backdrop-blur-md rounded-full flex items-center justify-center text-white transition-colors"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                        </button>
+                        <img
+                            src={selectedImage}
+                            alt="Preview Bukti Transfer"
+                            className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
+                            onClick={e => e.stopPropagation()}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
