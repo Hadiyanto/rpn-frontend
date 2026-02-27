@@ -14,9 +14,12 @@ import {
     LuChevronUp,
     LuPackage,
     LuReceipt,
+    LuCalendar,
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 /* ─── Interfaces ────────────────────────────────────────────────────── */
 
@@ -507,14 +510,22 @@ export default function CashflowPage() {
                                 </div>
 
                                 {/* Date */}
-                                <div className="space-y-1.5">
+                                <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal</label>
-                                    <input
-                                        type="date"
-                                        className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
-                                        value={expForm.date}
-                                        onChange={e => setExpForm(f => ({ ...f, date: e.target.value }))}
-                                    />
+                                    <div className="relative w-full">
+                                        <DatePicker
+                                            selected={expForm.date ? new Date(`${expForm.date}T00:00:00`) : null}
+                                            onChange={(dt: Date | null) => {
+                                                if (dt) {
+                                                    const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000);
+                                                    setExpForm(f => ({ ...f, date: local.toISOString().split('T')[0] }));
+                                                }
+                                            }}
+                                            dateFormat="dd/MM/yyyy"
+                                            className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                                        />
+                                        <LuCalendar className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
+                                    </div>
                                 </div>
                             </div>
 

@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
-import { LuMenu, LuSettings, LuCheck, LuX, LuChevronDown, LuChevronUp } from 'react-icons/lu';
+import { LuMenu, LuSettings, LuCheck, LuX, LuChevronDown, LuChevronUp, LuCalendar } from 'react-icons/lu';
 import { useUserRole } from '@/hooks/useUserRole';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 export default function ConfigPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -178,14 +180,22 @@ export default function ConfigPage() {
                         <>
                             {/* Add Quota Form */}
                             <div className="bg-white rounded-2xl p-4 shadow-sm mb-4 flex flex-wrap gap-3 items-end animate-in fade-in slide-in-from-top-2">
-                                <div className="flex-1 min-w-[130px] space-y-1.5">
+                                <div className="flex-1 min-w-[130px] space-y-1.5 flex flex-col">
                                     <label className="text-[10px] font-black uppercase text-primary/60">Tanggal</label>
-                                    <input
-                                        type="date"
-                                        value={newQuotaDate}
-                                        onChange={e => setNewQuotaDate(e.target.value)}
-                                        className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
-                                    />
+                                    <div className="relative w-full">
+                                        <DatePicker
+                                            selected={newQuotaDate ? new Date(`${newQuotaDate}T00:00:00`) : null}
+                                            onChange={(dt: Date | null) => {
+                                                if (dt) {
+                                                    const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000);
+                                                    setNewQuotaDate(local.toISOString().split('T')[0]);
+                                                }
+                                            }}
+                                            dateFormat="dd/MM/yyyy"
+                                            className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                        />
+                                        <LuCalendar className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary/40 text-sm" />
+                                    </div>
                                 </div>
                                 <div className="w-24 space-y-1.5">
                                     <label className="text-[10px] font-black uppercase text-primary/60">Kuota (Box)</label>

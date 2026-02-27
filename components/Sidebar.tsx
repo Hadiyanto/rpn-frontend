@@ -14,6 +14,7 @@ import {
     LuBanknote,
     LuArrowLeftRight,
     LuSettings,
+    LuActivity,
 } from 'react-icons/lu';
 
 interface SidebarProps {
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
     { label: 'Analytics', icon: LuChartBar, href: '/analytics', key: 'analytics' },
     { label: 'Finance', icon: LuBanknote, href: '/finance', key: 'finance' },
     { label: 'Cash Flow', icon: LuArrowLeftRight, href: '/cashflow', key: 'cashflow' },
+    { label: 'Summary', icon: LuActivity, href: '/summary', key: 'summary' },
     { label: 'Config', icon: LuSettings, href: '/config', key: 'config' },
 ];
 
