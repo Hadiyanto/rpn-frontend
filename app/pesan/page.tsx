@@ -415,7 +415,24 @@ export default function GuestOrderPage() {
                                         {(['FULL', 'HALF'] as const).map(bt => (
                                             <button
                                                 key={bt}
-                                                onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, box_type: bt } : p) }))}
+                                                onClick={() => {
+                                                    setForm(f => ({
+                                                        ...f,
+                                                        pesanan: f.pesanan.map((p, i) => {
+                                                            if (i !== idx) return p;
+                                                            let newP = { ...p, box_type: bt };
+
+                                                            // Auto-trim flavors if they switch from FULL (2) to HALF (1) and have 2 selected
+                                                            if (bt === 'HALF' && p.name && p.name.startsWith('Mix ')) {
+                                                                const parts = p.name.replace('Mix ', '').split(' Dan ');
+                                                                if (parts.length > 1) {
+                                                                    newP.name = parts[0];
+                                                                }
+                                                            }
+                                                            return newP;
+                                                        })
+                                                    }));
+                                                }}
                                                 className={`px-3 py-2 text-[10px] font-black uppercase transition-all ${item.box_type === bt ? 'bg-primary text-brand-yellow' : 'text-primary/50 hover:bg-black/5'
                                                     }`}
                                             >{bt}</button>
@@ -437,21 +454,82 @@ export default function GuestOrderPage() {
                                         </button>
                                     )}
                                 </div>
-                                {/* Item name as Dropdown */}
-                                <div className="relative">
-                                    <select
-                                        className="w-full h-11 min-h-[44px] px-4 pr-10 rounded-xl border-2 border-primary/10 bg-white text-primary text-sm font-medium focus:outline-none focus:border-primary/30 appearance-none"
-                                        value={item.name}
-                                        onChange={e => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: e.target.value } : p) }))}
-                                    >
-                                        <option value="">Pilih varian menu...</option>
+                                {/* Item name as Checkboxes (Max 2) */}
+                                <div className="pt-2">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60 block mb-2">
+                                        Pilih Rasa (Max {item.box_type === 'FULL' ? 2 : 1} Varian)
+                                    </label>
+                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                                         {variants
                                             .filter(v => v.is_active)
-                                            .map(v => (
-                                                <option key={v.id} value={v.variant_name}>{v.variant_name}</option>
-                                            ))}
-                                    </select>
-                                    <LuChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
+                                            .map(v => {
+                                                const maxFlavors = item.box_type === 'FULL' ? 2 : 1;
+                                                // Extract currently selected flavors from the normalized `item.name`
+                                                // It could be empty, "FlavorA", or "Mix FlavorA Dan FlavorB"
+                                                let selectedFlavors: string[] = [];
+                                                if (item.name) {
+                                                    if (item.name.startsWith('Mix ')) {
+                                                        selectedFlavors = item.name.replace('Mix ', '').split(' Dan ');
+                                                    } else {
+                                                        selectedFlavors = [item.name];
+                                                    }
+                                                }
+
+                                                const isChecked = selectedFlavors.includes(v.variant_name);
+                                                const isDisabled = !isChecked && selectedFlavors.length >= maxFlavors;
+
+                                                return (
+                                                    <label
+                                                        key={v.id}
+                                                        className={`relative flex items-center gap-2 p-2 rounded-xl border-2 transition-all cursor-pointer ${isChecked
+                                                            ? 'border-primary bg-primary/5 text-primary'
+                                                            : isDisabled
+                                                                ? 'border-primary/5 bg-primary/5 text-primary/30 opacity-50 cursor-not-allowed'
+                                                                : 'border-primary/10 bg-white text-primary/70 hover:border-primary/30'
+                                                            }`}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            className="peer sr-only"
+                                                            checked={isChecked}
+                                                            disabled={isDisabled}
+                                                            onChange={(e) => {
+                                                                let newFlavors = [...selectedFlavors];
+                                                                if (e.target.checked) {
+                                                                    if (newFlavors.length < maxFlavors) newFlavors.push(v.variant_name);
+                                                                } else {
+                                                                    newFlavors = newFlavors.filter(f => f !== v.variant_name);
+                                                                }
+
+                                                                // Re-normalize list to string
+                                                                let newName = '';
+                                                                if (newFlavors.length > 0) {
+                                                                    if (newFlavors.length > 1) {
+                                                                        const sorted = [...newFlavors].sort();
+                                                                        newName = `Mix ${sorted.join(' Dan ')}`;
+                                                                    } else {
+                                                                        newName = newFlavors[0];
+                                                                    }
+                                                                }
+
+                                                                setForm(f => ({
+                                                                    ...f,
+                                                                    pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: newName } : p)
+                                                                }));
+                                                            }}
+                                                        />
+                                                        <div className={`w-4 h-4 rounded flex items-center justify-center border-2 transition-colors ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20 peer-focus-visible:border-primary/50'
+                                                            }`}>
+                                                            {isChecked && <LuCheck className="text-[10px] stroke-[4]" />}
+                                                        </div>
+                                                        <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">{v.variant_name}</span>
+                                                    </label>
+                                                );
+                                            })}
+                                    </div>
+                                    {!item.name && (
+                                        <p className="text-[10px] text-red-500 font-bold mt-2">* Silahkan pilih minimal 1 rasa</p>
+                                    )}
                                 </div>
                             </div>
                         ))}
