@@ -93,7 +93,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                     <div className="p-6 space-y-4">
                         <div className="bg-blue-50 border-2 border-dashed border-blue-200 rounded-2xl p-6 text-center space-y-3">
                             <h3 className="text-sm font-bold text-blue-900">Rekening BCA</h3>
-                            <p className="font-black text-3xl text-blue-600 tracking-wider">123456789</p>
+                            <p className="font-black text-3xl text-blue-600 tracking-wider">1280119748</p>
                             <p className="text-xs font-bold text-blue-800 uppercase tracking-widest">A/N Anggita Prima</p>
                         </div>
 

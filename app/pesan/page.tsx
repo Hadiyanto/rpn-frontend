@@ -278,7 +278,7 @@ export default function GuestOrderPage() {
                     {/* {submittedOrder.payment_method === 'TRANSFER' && (
                         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center mb-6">
                             <p className="text-sm font-semibold text-blue-900 mb-2">Silahkan transfer ke rekening BCA:</p>
-                            <p className="text-2xl font-black text-blue-700 tracking-wider mb-1">1234567</p>
+                            <p className="text-2xl font-black text-blue-700 tracking-wider mb-1">1280119748</p>
                             <p className="text-sm font-bold text-blue-800">a/n Anggita Prima</p>
 
                             {!submittedOrder.transfer_img_url ? (
