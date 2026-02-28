@@ -37,6 +37,7 @@ interface OrderItem {
 interface Order {
     id: number;
     customer_name: string;
+    customer_phone: string;
     pickup_date: string;
     pickup_time: string;
     note: string | null;
@@ -210,6 +211,7 @@ export default function OrdersPage() {
     const emptyItem = () => ({ box_type: 'FULL' as 'FULL' | 'HALF', name: '', qty: 1 });
     const [form, setForm] = useState({
         customer_name: '',
+        customer_phone: '',
         pickup_date: getTodayStr(),
         pickup_time: '11:00',
         note: '',
@@ -219,6 +221,7 @@ export default function OrdersPage() {
 
     const resetForm = () => setForm({
         customer_name: '',
+        customer_phone: '',
         pickup_date: getTodayStr(),
         pickup_time: '11:00',
         note: '',
@@ -228,6 +231,7 @@ export default function OrdersPage() {
 
     const submitOrder = async () => {
         if (!form.customer_name.trim()) { alert('Nama customer wajib diisi'); return; }
+        if (!form.customer_phone.trim()) { alert('Nomor WhatsApp wajib diisi'); return; }
         if (!form.pickup_date) { alert('Tanggal pickup wajib diisi'); return; }
         if (form.pesanan.some(p => !p.name.trim())) { alert('Nama pesanan tidak boleh kosong'); return; }
         setSubmitting(true);
@@ -241,6 +245,7 @@ export default function OrdersPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         customer_name: form.customer_name.trim(),
+                        customer_phone: form.customer_phone.trim(),
                         pickup_date: form.pickup_date,
                         pickup_time: form.pickup_time.trim() || null,
                         note: form.note.trim() || null,
@@ -267,6 +272,7 @@ export default function OrdersPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         customer_name: form.customer_name.trim(),
+                        customer_phone: form.customer_phone.trim(),
                         pickup_date: form.pickup_date,
                         pickup_time: form.pickup_time.trim() || null,
                         note: form.note.trim() || null,
@@ -363,6 +369,8 @@ export default function OrdersPage() {
     const filtered = orders.filter((order) => {
         const matchSearch =
             order.customer_name.toLowerCase().includes(search.toLowerCase()) ||
+            order.customer_phone?.toLowerCase().includes(search.toLowerCase()) ||
+            order.note?.toLowerCase().includes(search.toLowerCase()) ||
             order.items.some((i) => i.name.toLowerCase().includes(search.toLowerCase()));
 
         const matchDate = activeDate === 'All' ? true : order.pickup_date === activeDate;
@@ -532,6 +540,9 @@ export default function OrdersPage() {
                                             </div>
                                             <div>
                                                 <h3 className="font-bold text-primary text-base">{order.customer_name}</h3>
+                                                <a href={`https://wa.me/${order.customer_phone?.replace(/^0/, '62')}`} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-brand-yellow/80 hover:text-brand-yellow hover:underline flex flex-row items-center gap-1">
+                                                    {order.customer_phone}
+                                                </a>
                                                 <p className="text-xs text-primary/50 flex items-center gap-1 mt-0.5">
                                                     <LuCalendarDays className="text-[13px]" />
                                                     {formatPickupDate(order.pickup_date)}
@@ -693,6 +704,7 @@ export default function OrdersPage() {
                                                         setEditingOrder(order);
                                                         setForm({
                                                             customer_name: order.customer_name,
+                                                            customer_phone: order.customer_phone,
                                                             pickup_date: order.pickup_date,
                                                             pickup_time: order.pickup_time?.slice(0, 5) || '11:00',
                                                             note: order.note || '',
@@ -791,6 +803,16 @@ export default function OrdersPage() {
                                             <option key={name} value={name} />
                                         ))}
                                     </datalist>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60 tracking-wider">Nomor WhatsApp *</label>
+                                    <input
+                                        type="tel"
+                                        className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                                        placeholder="0812xxxx"
+                                        value={form.customer_phone}
+                                        onChange={e => setForm(f => ({ ...f, customer_phone: e.target.value.replace(/[^0-9]/g, '') }))}
+                                    />
                                 </div>
 
                                 {/* Pickup Date & Time */}

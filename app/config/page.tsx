@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import WhatsAppManager from '@/components/WhatsAppManager';
 import { LuMenu, LuSettings, LuCheck, LuX, LuChevronDown, LuChevronUp, LuCalendar } from 'react-icons/lu';
 import { useUserRole } from '@/hooks/useUserRole';
 import DatePicker from 'react-datepicker';
@@ -247,6 +248,19 @@ export default function ConfigPage() {
                         </>
                     )}
                 </section>
+
+                {/* WhatsApp Section */}
+                <section>
+                    <button
+                        className="w-full flex justify-between items-center border-b-2 border-primary/10 pb-2 mb-4 group cursor-default"
+                    >
+                        <h2 className="text-lg font-bold text-primary flex items-center gap-2">
+                            Koneksi WhatsApp
+                        </h2>
+                    </button>
+                    <WhatsAppManager />
+                </section>
+
                 {/* Menu List */}
                 <section>
                     <button

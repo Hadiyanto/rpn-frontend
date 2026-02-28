@@ -63,6 +63,7 @@ export default function GuestOrderPage() {
 
     const [form, setForm] = useState({
         customer_name: '',
+        customer_phone: '',
         pickup_date: '', // Set via useEffect to prevent hydration error
         pickup_time: ':', // Intentionally empty hour and minute
         note: '',
@@ -108,6 +109,10 @@ export default function GuestOrderPage() {
             setErrorMessage('Nama customer wajib diisi');
             return window.scrollTo({ top: 0, behavior: 'smooth' });
         }
+        if (!form.customer_phone.trim()) {
+            setErrorMessage('Nomor WhatsApp wajib diisi');
+            return window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
         if (!form.pickup_date) {
             setErrorMessage('Tanggal pickup wajib diisi');
             return window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -151,6 +156,37 @@ export default function GuestOrderPage() {
             if (json.status === 'ok') {
                 setShowConfirm(false);
                 setSubmittedOrder(json.data);
+
+                // Send WhatsApp Notification to customer
+                try {
+                    const orderDetails = payload.pesanan.map(p => `- ${p.qty}x ${p.box_type === 'FULL' ? 'Full Box' : 'Half Box'} (${p.name})`).join('\n');
+                    const totalBox = payload.pesanan.reduce((sum, p) => sum + p.qty, 0);
+                    const totalAmount = payload.pesanan.reduce((sum, p) => {
+                        const m = menus.find(x => x.name === p.box_type);
+                        return sum + (p.qty * (m?.price || 0));
+                    }, 0);
+
+                    const uploadLink = `${window.location.origin}/pesan`;
+                    const waMessage = `Hai ${form.customer_name}, pesanannya sudah diterima ya.\n\nDetail Pesanan:\n${orderDetails}\n\nJumlah: ${totalBox} box\nTotal: Rp ${totalAmount.toLocaleString('id-ID')}\n\nPembayaran bisa melalui:\nBank: BCA\nNo Rek: 123456789\nA/N: Anggita Prima\n\nMohon konfirmasi bukti pembayarannya melalui link berikut:\n${uploadLink}\n\nTerima kasih,\nAnggita`;
+
+                    let waPhone = form.customer_phone.replace(/[^0-9]/g, '');
+                    if (waPhone.startsWith('0')) {
+                        waPhone = '62' + waPhone.substring(1);
+                    }
+
+                    fetch(`${apiUrl}/api/whatsapp/send`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            recipient: 'individual',
+                            phone: waPhone,
+                            message: waMessage
+                        }),
+                    }).catch(e => console.error('Failed to send WA message:', e));
+                } catch (waErr) {
+                    console.error('Error constructing WA message:', waErr);
+                }
+
             } else {
                 setShowConfirm(false);
                 setErrorMessage(json.message || 'Gagal menyimpan pesanan');
@@ -291,6 +327,7 @@ export default function GuestOrderPage() {
                                 setSubmittedOrder(null);
                                 setForm({
                                     customer_name: '',
+                                    customer_phone: '',
                                     pickup_date: getTodayStr(),
                                     pickup_time: ':',
                                     note: '',
@@ -338,6 +375,21 @@ export default function GuestOrderPage() {
                             autoCapitalize="words"
                             value={form.customer_name}
                             onChange={e => setForm(f => ({ ...f, customer_name: toTitleCase(e.target.value) }))}
+                        />
+                    </div>
+
+                    {/* Customer Phone */}
+                    <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nomor WhatsApp *</label>
+                        <input
+                            type="tel"
+                            className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                            placeholder="Contoh: 081234567890"
+                            value={form.customer_phone}
+                            onChange={e => {
+                                let val = e.target.value.replace(/[^0-9]/g, '');
+                                setForm(f => ({ ...f, customer_phone: val }));
+                            }}
                         />
                     </div>
 
