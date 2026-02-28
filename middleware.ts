@@ -32,10 +32,10 @@ export async function middleware(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
 
     const { pathname } = request.nextUrl;
-    const isPublic = pathname === '/' || pathname.startsWith('/pesan');
+    const isPublic = pathname === '/' || pathname.startsWith('/pesan') || pathname.startsWith('/bukti-transfer');
 
     // Sudah login + akses halaman login → ke /orders
-    if (user && isPublic) {
+    if (user && pathname === '/') {
         return NextResponse.redirect(new URL('/orders', request.url));
     }
 
