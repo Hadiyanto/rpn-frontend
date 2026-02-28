@@ -634,6 +634,10 @@ export default function GuestOrderPage() {
                                     <span className="font-bold text-primary text-right">{form.customer_name}</span>
                                 </div>
                                 <div className="flex justify-between border-b border-primary/10 pb-2">
+                                    <span className="text-primary/60">No. WhatsApp</span>
+                                    <span className="font-bold text-primary text-right">{form.customer_phone}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-primary/10 pb-2">
                                     <span className="text-primary/60">Pengambilan</span>
                                     <span className="font-bold text-primary text-right">{form.pickup_date} <br /> Pukul {form.pickup_time}</span>
                                 </div>
