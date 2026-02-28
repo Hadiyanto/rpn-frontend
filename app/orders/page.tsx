@@ -20,15 +20,15 @@ import {
     LuCheck,
     LuPackageCheck
 } from 'react-icons/lu';
-// import BottomNav from '@/components/BottomNav';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import { printOrder } from '@/utils/printer';
 import { subscribePush } from '@/utils/push';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
 
-
 interface OrderItem {
-    id: number;
+    id?: number;
     box_type: 'FULL' | 'HALF';
     name: string;
     qty: number;
@@ -182,6 +182,51 @@ export default function OrdersPage() {
 
     const [updatingPaymentId, setUpdatingPaymentId] = useState<number | null>(null);
 
+    // Dynamic Options Data
+    const [menus, setMenus] = useState<any[]>([]);
+    const [variants, setVariants] = useState<any[]>([]);
+    const [quotas, setQuotas] = useState<any[]>([]);
+
+    useEffect(() => {
+        const fetchOptions = async () => {
+            try {
+                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+                const [r1, r2, r3] = await Promise.all([
+                    fetch(`${apiUrl}/api/menu`).then(r => r.json()),
+                    fetch(`${apiUrl}/api/variants`).then(r => r.json()),
+                    fetch(`${apiUrl}/api/daily-quota`).then(r => r.json()),
+                ]);
+                if (r1.status === 'ok') setMenus(r1.data);
+                if (r2.status === 'ok') setVariants(r2.data);
+                if (r3.status === 'ok') setQuotas(r3.data);
+            } catch (err) {
+                console.error('Failed to fetch metadata', err);
+            }
+        };
+        fetchOptions();
+    }, []);
+
+    const filterPassedDates = (time: Date) => {
+        const y = time.getFullYear();
+        const m = String(time.getMonth() + 1).padStart(2, '0');
+        const d = String(time.getDate()).padStart(2, '0');
+        const dateString = `${y}-${m}-${d}`;
+
+        const q = quotas.find(q => q.date === dateString);
+        return q ? q.remaining_qty > 0 : false;
+    };
+
+    function normalizeVariant(name: string) {
+        if (!name) return name;
+        let n = name.replace(/Dengan/g, "Dan").trim();
+        if (n.includes(" Dan ") && !n.startsWith("Mix ")) n = "Mix " + n;
+        if (n.startsWith("Mix ")) {
+            const parts = n.replace("Mix ", "").split(" Dan ").map(p => p.trim()).sort();
+            return "Mix " + parts.join(" Dan ");
+        }
+        return n;
+    }
+
     const handlePaymentMethodChange = async (orderId: number, newMethod: string) => {
         setUpdatingPaymentId(orderId);
         try {
@@ -250,7 +295,9 @@ export default function OrdersPage() {
                         pickup_time: form.pickup_time.trim() || null,
                         note: form.note.trim() || null,
                         payment_method: form.payment_method || null,
-                        pesanan: form.pesanan.map(p => ({ box_type: p.box_type, name: p.name.trim(), qty: p.qty })),
+                        pesanan: form.pesanan
+                            .filter(p => p.name.trim().length > 0 && p.qty > 0)
+                            .map(p => ({ box_type: p.box_type, name: normalizeVariant(p.name.trim()), qty: p.qty })),
                     }),
                 });
                 const json = await res.json();
@@ -277,7 +324,9 @@ export default function OrdersPage() {
                         pickup_time: form.pickup_time.trim() || null,
                         note: form.note.trim() || null,
                         payment_method: form.payment_method || null,
-                        pesanan: form.pesanan.map(p => ({ box_type: p.box_type, name: p.name.trim(), qty: p.qty })),
+                        pesanan: form.pesanan
+                            .filter(p => p.name.trim().length > 0 && p.qty > 0)
+                            .map(p => ({ box_type: p.box_type, name: normalizeVariant(p.name.trim()), qty: p.qty })),
                     }),
                 });
                 const json = await res.json();
@@ -817,39 +866,51 @@ export default function OrdersPage() {
 
                                 {/* Pickup Date & Time */}
                                 <div className="flex gap-3">
-                                    <div className="flex-1 space-y-1.5">
+                                    <div className="flex-1 space-y-1.5 flex flex-col">
                                         <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pickup *</label>
-                                        <input
-                                            type="date"
-                                            className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
-                                            value={form.pickup_date}
-                                            onChange={e => setForm(f => ({ ...f, pickup_date: e.target.value }))}
-                                        />
+                                        <div className="flex-1 min-h-[44px]">
+                                            <DatePicker
+                                                selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null}
+                                                onChange={(date: Date | null) => {
+                                                    if (date) {
+                                                        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+                                                        setForm(f => ({ ...f, pickup_date: local.toISOString().split('T')[0] }));
+                                                    }
+                                                }}
+                                                filterDate={filterPassedDates}
+                                                dateFormat="dd/MM/yyyy"
+                                                className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
+                                                placeholderText="Pilih Tanggal"
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="w-36 space-y-1.5">
-                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu</label>
+                                    <div className="w-36 space-y-1.5 flex flex-col">
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu *</label>
                                         <div className="flex gap-1 h-11 rounded-xl border-2 border-primary/10 bg-primary/5 overflow-hidden">
                                             <select
-                                                value={form.pickup_time.split(':')[0] ?? '11'}
+                                                value={form.pickup_time.split(':')[0] || ''}
                                                 onChange={e => {
-                                                    const mm = form.pickup_time.split(':')[1] ?? '00';
+                                                    const mm = form.pickup_time.split(':')[1] || '';
                                                     setForm(f => ({ ...f, pickup_time: `${e.target.value}:${mm}` }));
                                                 }}
-                                                className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none"
+                                                className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none appearance-none m-0 p-0"
                                             >
-                                                {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
-                                                    <option key={h} value={h}>{h}</option>
-                                                ))}
+                                                <option value="" disabled>--</option>
+                                                {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
+                                                    const h = String(hNum).padStart(2, '0');
+                                                    return <option key={h} value={h}>{h}</option>;
+                                                })}
                                             </select>
                                             <span className="flex items-center text-primary font-black text-sm">:</span>
                                             <select
-                                                value={form.pickup_time.split(':')[1] ?? '00'}
+                                                value={form.pickup_time.split(':')[1] || ''}
                                                 onChange={e => {
-                                                    const hh = form.pickup_time.split(':')[0] ?? '11';
+                                                    const hh = form.pickup_time.split(':')[0] || '';
                                                     setForm(f => ({ ...f, pickup_time: `${hh}:${e.target.value}` }));
                                                 }}
-                                                className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none"
+                                                className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none appearance-none m-0 p-0"
                                             >
+                                                <option value="" disabled>--</option>
                                                 {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => (
                                                     <option key={m} value={m}>{m}</option>
                                                 ))}
@@ -859,60 +920,135 @@ export default function OrdersPage() {
                                 </div>
 
                                 {/* Pesanan */}
-                                <div className="space-y-2">
+                                <div className="space-y-3">
                                     <div className="flex items-center justify-between">
                                         <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Pesanan *</label>
                                         <button
                                             onClick={() => setForm(f => ({ ...f, pesanan: [...f.pesanan, emptyItem()] }))}
-                                            className="flex items-center gap-1 text-[10px] font-black text-primary bg-primary/10 px-3 py-1.5 rounded-full"
+                                            className="flex items-center gap-1 text-[10px] font-black text-primary bg-primary/10 px-3 py-1.5 rounded-full hover:bg-primary/20 transition-colors"
                                         >
                                             <LuPlus className="text-xs" /> Tambah Item
                                         </button>
                                     </div>
                                     {form.pesanan.map((item, idx) => (
-                                        <div key={idx} className="bg-primary/5 rounded-2xl p-3 space-y-2">
+                                        <div key={idx} className="bg-primary/5 rounded-2xl p-4 space-y-3">
                                             <div className="flex gap-2">
                                                 {/* Box Type */}
                                                 <div className="flex rounded-xl overflow-hidden border-2 border-primary/10">
                                                     {(['FULL', 'HALF'] as const).map(bt => (
                                                         <button
                                                             key={bt}
-                                                            onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, box_type: bt } : p) }))}
-                                                            className={`px-3 py-2 text-[10px] font-black uppercase transition-all ${item.box_type === bt ? 'bg-primary text-brand-yellow' : 'text-primary/50'
+                                                            onClick={() => {
+                                                                setForm(f => ({
+                                                                    ...f,
+                                                                    pesanan: f.pesanan.map((p, i) => {
+                                                                        if (i !== idx) return p;
+                                                                        let newP = { ...p, box_type: bt };
+                                                                        if (bt === 'HALF' && p.name && p.name.startsWith('Mix ')) {
+                                                                            const parts = p.name.replace('Mix ', '').split(' Dan ');
+                                                                            if (parts.length > 1) {
+                                                                                newP.name = parts[0];
+                                                                            }
+                                                                        }
+                                                                        return newP;
+                                                                    })
+                                                                }));
+                                                            }}
+                                                            className={`px-3 py-2 text-[10px] font-black uppercase transition-all ${item.box_type === bt ? 'bg-primary text-brand-yellow' : 'text-primary/50 hover:bg-black/5'
                                                                 }`}
                                                         >{bt}</button>
                                                     ))}
                                                 </div>
                                                 {/* Qty */}
-                                                <div className="flex items-center gap-2 bg-white rounded-xl border-2 border-primary/10 px-3">
-                                                    <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: Math.max(1, p.qty - 1) } : p) }))} className="text-primary font-black text-lg">−</button>
+                                                <div className="flex items-center gap-2 bg-white rounded-xl border-2 border-primary/10 px-2 sm:px-3">
+                                                    <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: Math.max(1, p.qty - 1) } : p) }))} className="text-primary font-black text-lg w-7 sm:w-6 h-full min-h-[38px] flex items-center justify-center hover:bg-black/5 rounded-md">−</button>
                                                     <span className="text-sm font-black text-primary w-5 text-center">{item.qty}</span>
-                                                    <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: p.qty + 1 } : p) }))} className="text-primary font-black text-lg">+</button>
+                                                    <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: p.qty + 1 } : p) }))} className="text-primary font-black text-lg w-7 sm:w-6 h-full min-h-[38px] flex items-center justify-center hover:bg-black/5 rounded-md">+</button>
                                                 </div>
                                                 {/* Delete */}
                                                 {form.pesanan.length > 1 && (
                                                     <button
                                                         onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.filter((_, i) => i !== idx) }))}
-                                                        className="ml-auto w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 text-red-400"
+                                                        className="ml-auto w-10 h-10 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
                                                     >
                                                         <LuTrash2 className="text-sm" />
                                                     </button>
                                                 )}
                                             </div>
-                                            {/* Item name */}
-                                            <input
-                                                className="w-full h-10 px-4 rounded-xl border-2 border-primary/10 bg-white text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
-                                                placeholder="Nama pesanan (contoh: Choco Kraft)"
-                                                autoCapitalize="words"
-                                                list={`item-names-${idx}`}
-                                                value={item.name}
-                                                onChange={e => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: toTitleCase(e.target.value) } : p) }))}
-                                            />
-                                            <datalist id={`item-names-${idx}`}>
-                                                {Array.from(new Set(orders.flatMap(o => o.items.map(i => i.name ? toTitleCase(i.name.trim()) : '')))).filter(Boolean).sort().map(name => (
-                                                    <option key={name} value={name} />
-                                                ))}
-                                            </datalist>
+                                            {/* Item name as Checkboxes (Max 2) */}
+                                            <div className="pt-2">
+                                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60 block mb-2">
+                                                    Pilih Rasa (Max {item.box_type === 'FULL' ? 2 : 1} Varian)
+                                                </label>
+                                                <div className="grid grid-cols-2 lg:grid-cols-2 gap-2">
+                                                    {variants
+                                                        .filter(v => v.is_active)
+                                                        .map(v => {
+                                                            const maxFlavors = item.box_type === 'FULL' ? 2 : 1;
+                                                            let selectedFlavors: string[] = [];
+                                                            if (item.name) {
+                                                                if (item.name.startsWith('Mix ')) {
+                                                                    selectedFlavors = item.name.replace('Mix ', '').split(' Dan ');
+                                                                } else {
+                                                                    selectedFlavors = [item.name];
+                                                                }
+                                                            }
+
+                                                            const isChecked = selectedFlavors.includes(v.variant_name);
+                                                            const isDisabled = !isChecked && selectedFlavors.length >= maxFlavors;
+
+                                                            return (
+                                                                <label
+                                                                    key={v.id}
+                                                                    className={`relative flex items-center gap-2 p-2 rounded-lg border-2 transition-all cursor-pointer ${isChecked
+                                                                        ? 'border-primary bg-primary/5 text-primary'
+                                                                        : isDisabled
+                                                                            ? 'border-primary/5 bg-primary/5 text-primary/30 opacity-50 cursor-not-allowed'
+                                                                            : 'border-primary/10 bg-white text-primary/70 hover:border-primary/30'
+                                                                        }`}
+                                                                >
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        className="peer sr-only"
+                                                                        checked={isChecked}
+                                                                        disabled={isDisabled}
+                                                                        onChange={(e) => {
+                                                                            let newFlavors = [...selectedFlavors];
+                                                                            if (e.target.checked) {
+                                                                                if (newFlavors.length < maxFlavors) newFlavors.push(v.variant_name);
+                                                                            } else {
+                                                                                newFlavors = newFlavors.filter(f => f !== v.variant_name);
+                                                                            }
+
+                                                                            let newName = '';
+                                                                            if (newFlavors.length > 0) {
+                                                                                if (newFlavors.length > 1) {
+                                                                                    const sorted = [...newFlavors].sort();
+                                                                                    newName = `Mix ${sorted.join(' Dan ')}`;
+                                                                                } else {
+                                                                                    newName = newFlavors[0];
+                                                                                }
+                                                                            }
+
+                                                                            setForm(f => ({
+                                                                                ...f,
+                                                                                pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: newName } : p)
+                                                                            }));
+                                                                        }}
+                                                                    />
+                                                                    <div className={`w-4 h-4 rounded flex items-center justify-center border-2 transition-colors shrink-0 flex-none ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20 peer-focus-visible:border-primary/50'
+                                                                        }`}>
+                                                                        {isChecked && <LuCheck className="text-[10px] stroke-[4]" />}
+                                                                    </div>
+                                                                    <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">{v.variant_name}</span>
+                                                                </label>
+                                                            );
+                                                        })}
+                                                </div>
+                                                {!item.name && (
+                                                    <p className="text-[10px] text-red-500 font-bold mt-2">* Silahkan pilih minimal 1 rasa</p>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

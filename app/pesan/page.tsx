@@ -101,12 +101,11 @@ export default function GuestOrderPage() {
 
     // Filter to only enable dates that exist in the daily_quota table and have remaining_qty > 0
     const filterPassedDates = (time: Date) => {
-        const local = new Date(time.getTime() - time.getTimezoneOffset() * 60000);
-        const dateString = local.toISOString().split('T')[0];
-        const todayStr = getTodayStr();
-
-        // Must be today or future
-        if (dateString < todayStr) return false;
+        // Build Local YYYY-MM-DD reliably avoiding UTC shifts
+        const y = time.getFullYear();
+        const m = String(time.getMonth() + 1).padStart(2, '0');
+        const d = String(time.getDate()).padStart(2, '0');
+        const dateString = `${y}-${m}-${d}`;
 
         const q = quotas.find(q => q.date === dateString);
         return q ? q.remaining_qty > 0 : false;
