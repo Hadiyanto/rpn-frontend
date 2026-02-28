@@ -251,6 +251,7 @@ export default function OrdersPage() {
 
     // Bottom sheet state
     const [showSheet, setShowSheet] = useState(false);
+    const [showTimePicker, setShowTimePicker] = useState(false);
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const emptyItem = () => ({ box_type: 'FULL' as 'FULL' | 'HALF', name: '', qty: 1 });
@@ -884,38 +885,86 @@ export default function OrdersPage() {
                                             />
                                         </div>
                                     </div>
-                                    <div className="w-36 space-y-1.5 flex flex-col">
+                                    <div className="w-36 space-y-1.5 flex flex-col relative">
                                         <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu *</label>
-                                        <div className="flex gap-1 h-11 rounded-xl border-2 border-primary/10 bg-primary/5 overflow-hidden">
-                                            <select
-                                                value={form.pickup_time.split(':')[0] || ''}
-                                                onChange={e => {
-                                                    const mm = form.pickup_time.split(':')[1] || '';
-                                                    setForm(f => ({ ...f, pickup_time: `${e.target.value}:${mm}` }));
-                                                }}
-                                                className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none appearance-none m-0 p-0"
-                                            >
-                                                <option value="" disabled>--</option>
-                                                {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
-                                                    const h = String(hNum).padStart(2, '0');
-                                                    return <option key={h} value={h}>{h}</option>;
-                                                })}
-                                            </select>
-                                            <span className="flex items-center text-primary font-black text-sm">:</span>
-                                            <select
-                                                value={form.pickup_time.split(':')[1] || ''}
-                                                onChange={e => {
-                                                    const hh = form.pickup_time.split(':')[0] || '';
-                                                    setForm(f => ({ ...f, pickup_time: `${hh}:${e.target.value}` }));
-                                                }}
-                                                className="flex-1 bg-transparent text-primary text-sm font-medium text-center focus:outline-none appearance-none m-0 p-0"
-                                            >
-                                                <option value="" disabled>--</option>
-                                                {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => (
-                                                    <option key={m} value={m}>{m}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+
+                                        {/* Custom Time Selector Button */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowTimePicker(!showTimePicker)}
+                                            className="w-full h-11 px-4 flex items-center justify-center gap-1 rounded-xl border-2 border-primary/10 bg-primary/5 hover:bg-primary/10 transition-colors text-primary text-sm font-extrabold focus:outline-none focus:border-primary/30"
+                                        >
+                                            <span>{form.pickup_time.split(':')[0] || '--'}</span>
+                                            <span className="opacity-50">:</span>
+                                            <span>{form.pickup_time.split(':')[1] || '--'}</span>
+                                            <LuChevronDown className={`ml-auto transition-transform ${showTimePicker ? 'rotate-180' : ''}`} />
+                                        </button>
+
+                                        {/* Custom Floating Dropdown */}
+                                        {showTimePicker && (
+                                            <>
+                                                <div className="fixed inset-0 z-10" onClick={() => setShowTimePicker(false)}></div>
+                                                <div className="absolute top-[calc(100%+8px)] right-0 w-48 bg-white rounded-2xl shadow-2xl border-2 border-primary/5 z-20 flex overflow-hidden animate-in zoom-in-95 duration-200">
+
+                                                    {/* Hours Column */}
+                                                    <div className="flex-1 border-r border-primary/5 max-h-56 overflow-y-auto no-scrollbar">
+                                                        <div className="sticky top-0 bg-white/90 backdrop-blur pb-2 pt-3 px-3">
+                                                            <div className="text-[10px] font-black uppercase tracking-widest text-primary/40 text-center">Jam</div>
+                                                        </div>
+                                                        <div className="p-1.5 space-y-0.5">
+                                                            {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
+                                                                const h = String(hNum).padStart(2, '0');
+                                                                const isSelected = form.pickup_time.split(':')[0] === h;
+                                                                return (
+                                                                    <button
+                                                                        key={h}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            const mm = form.pickup_time.split(':')[1] || '00';
+                                                                            setForm(f => ({ ...f, pickup_time: `${h}:${mm}` }));
+                                                                        }}
+                                                                        className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected
+                                                                                ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
+                                                                                : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
+                                                                            }`}
+                                                                    >
+                                                                        {h}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Minutes Column */}
+                                                    <div className="flex-1 max-h-56 overflow-y-auto no-scrollbar">
+                                                        <div className="sticky top-0 bg-white/90 backdrop-blur pb-2 pt-3 px-3">
+                                                            <div className="text-[10px] font-black uppercase tracking-widest text-primary/40 text-center">Menit</div>
+                                                        </div>
+                                                        <div className="p-1.5 space-y-0.5">
+                                                            {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => {
+                                                                const isSelected = form.pickup_time.split(':')[1] === m;
+                                                                return (
+                                                                    <button
+                                                                        key={m}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            const hh = form.pickup_time.split(':')[0] || '11';
+                                                                            setForm(f => ({ ...f, pickup_time: `${hh}:${m}` }));
+                                                                        }}
+                                                                        className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected
+                                                                                ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
+                                                                                : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
+                                                                            }`}
+                                                                    >
+                                                                        {m}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
 
