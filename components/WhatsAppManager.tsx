@@ -1,13 +1,6 @@
-'use client';
-
 import React, { useState, useEffect } from 'react';
 import { MdQrCode, MdRefresh, MdSend, MdCheckCircle, MdError, MdClose, MdSync } from 'react-icons/md';
 import Image from 'next/image';
-
-// We do not have NotificationService yet, let's substitute it with window.alert or toast
-const showLocalNotification = async ({ title, body }: { title: string, body: string }) => {
-    alert(`${title}\n${body}`);
-};
 
 interface Contact {
     id: number;
@@ -44,6 +37,14 @@ export default function WhatsAppManager() {
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [showMessageModal, setShowMessageModal] = useState(false);
+
+    // Toast state
+    const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+    const showLocalNotification = ({ title, body, type = 'info' }: { title: string, body: string, type?: 'success' | 'error' | 'info' }) => {
+        setToast({ title, body, type });
+        setTimeout(() => setToast(null), 3000);
+    };
 
     // Message modal states
     const [contacts, setContacts] = useState<Contact[]>([]);
@@ -153,6 +154,7 @@ export default function WhatsAppManager() {
                 showLocalNotification({
                     title: '🔄 QR Code di-Regenerate',
                     body: 'Mohon tunggu sebentar...',
+                    type: 'info'
                 });
                 setQrCode(null);
                 setIsConnected(false);
@@ -165,6 +167,7 @@ export default function WhatsAppManager() {
             showLocalNotification({
                 title: '❌ Gagal Regenerate QR',
                 body: 'Terjadi kesalahan, coba lagi.',
+                type: 'error'
             });
         } finally {
             setIsLoading(false);
@@ -192,6 +195,7 @@ export default function WhatsAppManager() {
             showLocalNotification({
                 title: '⚠️ Pesan Kosong',
                 body: 'Silakan ketik pesan terlebih dahulu',
+                type: 'error'
             });
             return;
         }
@@ -215,6 +219,7 @@ export default function WhatsAppManager() {
                     showLocalNotification({
                         title: '⚠️ Nomor HP Diperlukan',
                         body: 'Masukkan nomor HP atau pilih kontak',
+                        type: 'error'
                     });
                     setIsSending(false);
                     return;
@@ -224,6 +229,7 @@ export default function WhatsAppManager() {
                     showLocalNotification({
                         title: '⚠️ Kontak Belum Dipilih',
                         body: 'Pilih minimal 1 kontak untuk group',
+                        type: 'error'
                     });
                     setIsSending(false);
                     return;
@@ -246,6 +252,7 @@ export default function WhatsAppManager() {
                 showLocalNotification({
                     title: '✅ Pesan Terkirim',
                     body: `Pesan WhatsApp berhasil dikirim!`,
+                    type: 'success'
                 });
                 setShowMessageModal(false);
                 setMessage('');
@@ -256,6 +263,7 @@ export default function WhatsAppManager() {
                 showLocalNotification({
                     title: '❌ Gagal Kirim Pesan',
                     body: error.message || 'Terjadi kesalahan',
+                    type: 'error'
                 });
             }
         } catch (error) {
@@ -263,6 +271,7 @@ export default function WhatsAppManager() {
             showLocalNotification({
                 title: '❌ Error',
                 body: 'Terjadi kesalahan saat mengirim pesan',
+                type: 'error'
             });
         } finally {
             setIsSending(false);
@@ -486,6 +495,21 @@ export default function WhatsAppManager() {
                                 )}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Toast Notification Overlay */}
+            {toast && (
+                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
+                    <div className={`shadow-xl rounded-2xl p-4 flex items-start gap-3 w-80 max-w-[90vw] ${toast.type === 'success' ? 'bg-green-500 text-white' : toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-primary text-brand-yellow'}`}>
+                        <div className="flex-1">
+                            <h4 className="font-bold text-sm mb-0.5">{toast.title}</h4>
+                            <p className="text-xs opacity-90">{toast.body}</p>
+                        </div>
+                        <button onClick={() => setToast(null)} className="p-1 hover:bg-black/10 rounded-lg transition-colors">
+                            <MdClose className="text-lg" />
+                        </button>
                     </div>
                 </div>
             )}

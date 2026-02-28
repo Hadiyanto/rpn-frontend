@@ -8,6 +8,7 @@ import {
     LuPackage,
     LuCheck,
 } from 'react-icons/lu';
+import { MdClose } from 'react-icons/md';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
@@ -60,6 +61,14 @@ export default function GuestOrderPage() {
     const [showConfirm, setShowConfirm] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [uploading, setUploading] = useState(false);
+
+    // Toast state
+    const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+    const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setToast({ title, body, type });
+        setTimeout(() => setToast(null), 3000);
+    };
 
     const [form, setForm] = useState({
         customer_name: '',
@@ -156,37 +165,6 @@ export default function GuestOrderPage() {
             if (json.status === 'ok') {
                 setShowConfirm(false);
                 setSubmittedOrder(json.data);
-
-                // Send WhatsApp Notification to customer
-                try {
-                    const orderDetails = payload.pesanan.map(p => `- ${p.qty}x ${p.box_type === 'FULL' ? 'Full Box' : 'Half Box'} (${p.name})`).join('\n');
-                    const totalBox = payload.pesanan.reduce((sum, p) => sum + p.qty, 0);
-                    const totalAmount = payload.pesanan.reduce((sum, p) => {
-                        const m = menus.find(x => x.name === p.box_type);
-                        return sum + (p.qty * (m?.price || 0));
-                    }, 0);
-
-                    const uploadLink = `${window.location.origin}/pesan`;
-                    const waMessage = `Hai ${form.customer_name}, pesanannya sudah diterima ya.\n\nDetail Pesanan:\n${orderDetails}\n\nJumlah: ${totalBox} box\nTotal: Rp ${totalAmount.toLocaleString('id-ID')}\n\nPembayaran bisa melalui:\nBank: BCA\nNo Rek: 123456789\nA/N: Anggita Prima\n\nMohon konfirmasi bukti pembayarannya melalui link berikut:\n${uploadLink}\n\nTerima kasih,\nAnggita`;
-
-                    let waPhone = form.customer_phone.replace(/[^0-9]/g, '');
-                    if (waPhone.startsWith('0')) {
-                        waPhone = '62' + waPhone.substring(1);
-                    }
-
-                    fetch(`${apiUrl}/api/whatsapp/send`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            recipient: 'individual',
-                            phone: waPhone,
-                            message: waMessage
-                        }),
-                    }).catch(e => console.error('Failed to send WA message:', e));
-                } catch (waErr) {
-                    console.error('Error constructing WA message:', waErr);
-                }
-
             } else {
                 setShowConfirm(false);
                 setErrorMessage(json.message || 'Gagal menyimpan pesanan');
@@ -220,7 +198,7 @@ export default function GuestOrderPage() {
             const uploadJson = await uploadRes.json();
 
             if (uploadJson.status !== 'ok') {
-                alert('Gagal mengupload gambar');
+                showToast('❌ Upload Gagal', 'Gagal mengupload gambar', 'error');
                 setUploading(false);
                 return;
             }
@@ -235,11 +213,12 @@ export default function GuestOrderPage() {
             const updateJson = await updateRes.json();
             if (updateJson.status === 'ok') {
                 setSubmittedOrder({ ...submittedOrder, transfer_img_url: uploadJson.imageUrl });
+                showToast('✅ Berhasil', 'Bukti transfer berhasil disimpan', 'success');
             } else {
-                alert('Gagal memperbarui pesanan dengan bukti transfer');
+                showToast('❌ Gagal', 'Gagal memperbarui pesanan dengan bukti transfer', 'error');
             }
         } catch {
-            alert('Terjadi kesalahan jaringan saat mengupload bukti');
+            showToast('❌ Error Jaringan', 'Terjadi kesalahan jaringan saat mengupload bukti', 'error');
         } finally {
             setUploading(false);
         }
@@ -296,7 +275,7 @@ export default function GuestOrderPage() {
                         </div>
                     </div>
 
-                    {submittedOrder.payment_method === 'TRANSFER' && (
+                    {/* {submittedOrder.payment_method === 'TRANSFER' && (
                         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center mb-6">
                             <p className="text-sm font-semibold text-blue-900 mb-2">Silahkan transfer ke rekening BCA:</p>
                             <p className="text-2xl font-black text-blue-700 tracking-wider mb-1">1234567</p>
@@ -319,7 +298,7 @@ export default function GuestOrderPage() {
                                 </div>
                             )}
                         </div>
-                    )}
+                    )} */}
 
                     {(submittedOrder.payment_method !== 'TRANSFER' || submittedOrder.transfer_img_url) && (
                         <button
@@ -710,6 +689,21 @@ export default function GuestOrderPage() {
                                 {submitting ? 'Memproses...' : 'Kirim Pesanan!'}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Toast Notification Overlay */}
+            {toast && (
+                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
+                    <div className={`shadow-xl rounded-2xl p-4 flex items-start gap-3 w-80 max-w-[90vw] ${toast.type === 'success' ? 'bg-green-500 text-white' : toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-primary text-brand-yellow'}`}>
+                        <div className="flex-1">
+                            <h4 className="font-bold text-sm mb-0.5">{toast.title}</h4>
+                            <p className="text-xs opacity-90">{toast.body}</p>
+                        </div>
+                        <button onClick={() => setToast(null)} className="p-1 hover:bg-black/10 rounded-lg transition-colors">
+                            <MdClose className="text-lg" />
+                        </button>
                     </div>
                 </div>
             )}
