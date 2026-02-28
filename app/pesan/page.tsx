@@ -99,7 +99,7 @@ export default function GuestOrderPage() {
         }).catch(console.error);
     }, []);
 
-    // Filter to only enable dates that exist in the daily_quota table and have qty > 0
+    // Filter to only enable dates that exist in the daily_quota table and have remaining_qty > 0
     const filterPassedDates = (time: Date) => {
         const local = new Date(time.getTime() - time.getTimezoneOffset() * 60000);
         const dateString = local.toISOString().split('T')[0];
@@ -109,7 +109,7 @@ export default function GuestOrderPage() {
         if (dateString < todayStr) return false;
 
         const q = quotas.find(q => q.date === dateString);
-        return q ? q.qty > 0 : false;
+        return q ? q.remaining_qty > 0 : false;
     };
 
     const handleReviewOrder = () => {
