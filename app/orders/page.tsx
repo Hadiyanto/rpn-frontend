@@ -268,7 +268,7 @@ export default function OrdersPage() {
         const dateString = `${y}-${m}-${d}`;
 
         const q = quotas.find(q => q.date === dateString);
-        return q ? q.remaining_qty > 0 : false;
+        return q ? (q.remaining_qty > 0 || (q.remaining_hampers_qty || 0) > 0) : false;
     };
 
     function normalizeVariant(name: string) {
@@ -309,7 +309,7 @@ export default function OrdersPage() {
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
     const [submitting, setSubmitting] = useState(false);
-    const emptyItem = () => ({ box_type: 'FULL' as 'FULL' | 'HALF', name: '', qty: 1 });
+    const emptyItem = () => ({ box_type: 'FULL' as 'FULL' | 'HALF' | 'HAMPERS', name: '', qty: 1 });
     const [form, setForm] = useState({
         customer_name: '',
         customer_phone: '',
@@ -343,11 +343,15 @@ export default function OrdersPage() {
         // If no explicit hourly quota rule exists, it means that hour is CLOSED
         if (!hq) return false;
 
-        const requestedQty = form.pesanan.reduce((sum, item) => {
-            if (!item.name) return sum;
-            return sum + (item.box_type === 'HALF' ? item.qty * 0.5 : item.qty);
-        }, 0);
-        return requestedQty <= hq.remaining_qty;
+        let requestedBox = 0;
+        let requestedHampers = 0;
+        form.pesanan.forEach((item) => {
+            if (!item.name) return;
+            if (item.box_type === 'HALF') requestedBox += item.qty * 0.5;
+            else if (item.box_type === 'FULL') requestedBox += item.qty;
+            else if (item.box_type === 'HAMPERS') requestedHampers += item.qty;
+        });
+        return requestedBox <= hq.remaining_qty && requestedHampers <= (hq.remaining_hampers_qty || 0);
     };
 
     const resetForm = () => setForm({

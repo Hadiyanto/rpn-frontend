@@ -132,7 +132,7 @@ export default function GuestOrderPage() {
         const dateString = `${y}-${m}-${d}`;
 
         const q = quotas.find(q => q.date === dateString);
-        return q ? q.remaining_qty > 0 : false;
+        return q ? (q.remaining_qty > 0 || (q.remaining_hampers_qty || 0) > 0) : false;
     };
 
     // Calculate remaining quota for a specific hour block based on the selected date
@@ -145,13 +145,17 @@ export default function GuestOrderPage() {
         // If no explicit hourly quota rule exists, it means that hour is CLOSED
         if (!hq) return false;
 
-        // Count how many we want to order treating HALF as 0.5, FULL and HAMPERS as 1
-        const requestedQty = form.pesanan.reduce((sum, item) => {
-            if (!item.name) return sum;
-            return sum + (item.box_type === 'HALF' ? item.qty * 0.5 : item.qty);
-        }, 0);
+        // Count how many we want to order treating HALF as 0.5, FULL as 1, HAMPERS as 1 but separate
+        let requestedBox = 0;
+        let requestedHampers = 0;
+        form.pesanan.forEach((item) => {
+            if (!item.name) return;
+            if (item.box_type === 'HALF') requestedBox += item.qty * 0.5;
+            else if (item.box_type === 'FULL') requestedBox += item.qty;
+            else if (item.box_type === 'HAMPERS') requestedHampers += item.qty;
+        });
 
-        return requestedQty <= hq.remaining_qty;
+        return requestedBox <= hq.remaining_qty && requestedHampers <= (hq.remaining_hampers_qty || 0);
     };
 
     const handleReviewOrder = () => {

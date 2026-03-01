@@ -26,9 +26,11 @@ export default function ConfigPage() {
 
     const [newQuotaDate, setNewQuotaDate] = useState('');
     const [newQuotaQty, setNewQuotaQty] = useState('50');
+    const [newQuotaHampers, setNewQuotaHampers] = useState('0');
 
     const [newHourlyTime, setNewHourlyTime] = useState('12:00');
     const [newHourlyQty, setNewHourlyQty] = useState('10');
+    const [newHourlyHampers, setNewHourlyHampers] = useState('0');
 
     // Toast state
     const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -121,7 +123,7 @@ export default function ConfigPage() {
             const res = await fetch(`${apiUrl}/api/daily-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: newQuotaDate, qty: parseInt(newQuotaQty, 10) }),
+                body: JSON.stringify({ date: newQuotaDate, qty: parseInt(newQuotaQty, 10), hampers_qty: parseInt(newQuotaHampers || '0', 10) }),
             });
             const json = await res.json();
             if (json.status === 'ok') {
@@ -137,14 +139,15 @@ export default function ConfigPage() {
         }
     };
 
-    const updateQuotaQty = async (id: number, currentQty: number, newQtyStr: string) => {
+    const updateQuotaQty = async (id: number, currentQty: number, currentHampersQty: number, newQtyStr: string, newHampersQtyStr: string) => {
         const qty = parseInt(newQtyStr, 10);
-        if (isNaN(qty) || qty === currentQty) return;
+        const hampers_qty = parseInt(newHampersQtyStr, 10);
+        if (isNaN(qty) || isNaN(hampers_qty) || (qty === currentQty && hampers_qty === currentHampersQty)) return;
         try {
             const res = await fetch(`${apiUrl}/api/daily-quota/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ qty }),
+                body: JSON.stringify({ qty, hampers_qty }),
             });
             if (res.ok) fetchData();
         } catch (e) {
@@ -161,7 +164,7 @@ export default function ConfigPage() {
             const res = await fetch(`${apiUrl}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ time_str: newHourlyTime, qty: parseInt(newHourlyQty, 10), is_active: true }),
+                body: JSON.stringify({ time_str: newHourlyTime, qty: parseInt(newHourlyQty, 10), hampers_qty: parseInt(newHourlyHampers || '0', 10), is_active: true }),
             });
             const json = await res.json();
             if (json.status === 'ok') {
@@ -177,14 +180,15 @@ export default function ConfigPage() {
         }
     };
 
-    const updateHourlyQuotaQty = async (id: number, time_str: string, is_active: boolean, currentQty: number, newQtyStr: string) => {
+    const updateHourlyQuotaQty = async (id: number, time_str: string, is_active: boolean, currentQty: number, currentHampersQty: number, newQtyStr: string, newHampersQtyStr: string) => {
         const qty = parseInt(newQtyStr, 10);
-        if (isNaN(qty) || qty === currentQty) return;
+        const hampers_qty = parseInt(newHampersQtyStr, 10);
+        if (isNaN(qty) || isNaN(hampers_qty) || (qty === currentQty && hampers_qty === currentHampersQty)) return;
         try {
             const res = await fetch(`${apiUrl}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ time_str, qty, is_active }),
+                body: JSON.stringify({ time_str, qty, hampers_qty, is_active }),
             });
             if (res.ok) fetchData();
         } catch (e) {
@@ -192,12 +196,12 @@ export default function ConfigPage() {
         }
     };
 
-    const toggleHourlyQuotaActive = async (id: number, time_str: string, is_active: boolean, qty: number) => {
+    const toggleHourlyQuotaActive = async (id: number, time_str: string, is_active: boolean, qty: number, hampers_qty: number) => {
         try {
             const res = await fetch(`${apiUrl}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ time_str, qty, is_active: !is_active }),
+                body: JSON.stringify({ time_str, qty, hampers_qty, is_active: !is_active }),
             });
             if (res.ok) fetchData();
         } catch (e) {
@@ -272,12 +276,21 @@ export default function ConfigPage() {
                                         <LuCalendar className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary/40 text-sm" />
                                     </div>
                                 </div>
-                                <div className="w-24 space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase text-primary/60">Kuota (Box)</label>
+                                <div className="w-20 space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60">Box Qty</label>
                                     <input
                                         type="number"
                                         value={newQuotaQty}
                                         onChange={e => setNewQuotaQty(e.target.value)}
+                                        className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                    />
+                                </div>
+                                <div className="w-24 space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60">Hampers Qty</label>
+                                    <input
+                                        type="number"
+                                        value={newQuotaHampers}
+                                        onChange={e => setNewQuotaHampers(e.target.value)}
                                         className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
                                     />
                                 </div>
@@ -306,12 +319,19 @@ export default function ConfigPage() {
                                                     <p className="text-[10px] font-black text-primary/40 leading-none mt-1">{q.date}</p>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[10px] font-black uppercase text-primary/50">Max:</span>
+                                                    <span className="text-[10px] font-black uppercase text-primary/50">Box:</span>
                                                     <input
                                                         type="number"
                                                         defaultValue={q.qty}
-                                                        onBlur={e => updateQuotaQty(q.id, q.qty, e.target.value)}
-                                                        className="w-16 h-8 px-2 text-center text-sm font-bold text-primary bg-primary/5 border border-primary/10 rounded-lg focus:outline-none focus:border-primary/30"
+                                                        onBlur={e => updateQuotaQty(q.id, q.qty, q.hampers_qty, e.target.value, String(q.hampers_qty))}
+                                                        className="w-14 h-8 px-2 text-center text-sm font-bold text-primary bg-primary/5 border border-primary/10 rounded-lg focus:outline-none focus:border-primary/30"
+                                                    />
+                                                    <span className="text-[10px] font-black uppercase text-primary/50 ml-1">Hmp:</span>
+                                                    <input
+                                                        type="number"
+                                                        defaultValue={q.hampers_qty}
+                                                        onBlur={e => updateQuotaQty(q.id, q.qty, q.hampers_qty, String(q.qty), e.target.value)}
+                                                        className="w-14 h-8 px-2 text-center text-sm font-bold text-primary bg-primary/5 border border-primary/10 rounded-lg focus:outline-none focus:border-primary/30"
                                                     />
                                                 </div>
                                             </div>
@@ -353,12 +373,21 @@ export default function ConfigPage() {
                                         })}
                                     </select>
                                 </div>
-                                <div className="w-24 space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase text-primary/60">Limit (Box)</label>
+                                <div className="w-20 space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60">Box Qty</label>
                                     <input
                                         type="number"
                                         value={newHourlyQty}
                                         onChange={e => setNewHourlyQty(e.target.value)}
+                                        className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                    />
+                                </div>
+                                <div className="w-24 space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60">Hmp Qty</label>
+                                    <input
+                                        type="number"
+                                        value={newHourlyHampers}
+                                        onChange={e => setNewHourlyHampers(e.target.value)}
                                         className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
                                     />
                                 </div>
@@ -387,20 +416,27 @@ export default function ConfigPage() {
                                                     <span className="text-[10px] font-black uppercase text-primary/40">{hq.is_active ? 'Aktif' : 'Nonaktif'}</span>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[10px] font-black uppercase text-primary/50">Max:</span>
+                                            <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                                                <span className="text-[10px] font-black uppercase text-primary/50">Box:</span>
                                                 <input
                                                     type="number"
                                                     defaultValue={hq.qty}
-                                                    onBlur={e => updateHourlyQuotaQty(hq.id, hq.time_str, hq.is_active, hq.qty, e.target.value)}
-                                                    className="w-16 h-8 text-center text-sm font-bold bg-primary/5 border border-primary/10 rounded-lg text-primary focus:outline-none focus:border-primary/30"
+                                                    onBlur={e => updateHourlyQuotaQty(hq.id, hq.time_str, hq.is_active, hq.qty, hq.hampers_qty, e.target.value, String(hq.hampers_qty))}
+                                                    className="w-14 h-8 text-center text-sm font-bold bg-primary/5 border border-primary/10 rounded-lg text-primary focus:outline-none focus:border-primary/30"
+                                                />
+                                                <span className="text-[10px] font-black uppercase text-primary/50 ml-1">Hmp:</span>
+                                                <input
+                                                    type="number"
+                                                    defaultValue={hq.hampers_qty}
+                                                    onBlur={e => updateHourlyQuotaQty(hq.id, hq.time_str, hq.is_active, hq.qty, hq.hampers_qty, String(hq.qty), e.target.value)}
+                                                    className="w-14 h-8 text-center text-sm font-bold bg-primary/5 border border-primary/10 rounded-lg text-primary focus:outline-none focus:border-primary/30"
                                                 />
                                                 <button
-                                                    onClick={() => toggleHourlyQuotaActive(hq.id, hq.time_str, hq.is_active, hq.qty)}
+                                                    onClick={() => toggleHourlyQuotaActive(hq.id, hq.time_str, hq.is_active, hq.qty, hq.hampers_qty)}
                                                     title={hq.is_active ? "Nonaktifkan Jam Ini" : "Aktifkan Jam Ini"}
-                                                    className={`w-8 h-8 flex items-center justify-center rounded-lg border-2 transition-colors ${hq.is_active
-                                                            ? 'border-green-500/20 text-green-600 bg-green-50 hover:bg-green-100'
-                                                            : 'border-red-500/20 text-red-600 bg-red-50 hover:bg-red-100'
+                                                    className={`w-8 h-8 flex items-center justify-center rounded-lg border-2 transition-colors ml-1 ${hq.is_active
+                                                        ? 'border-green-500/20 text-green-600 bg-green-50 hover:bg-green-100'
+                                                        : 'border-red-500/20 text-red-600 bg-red-50 hover:bg-red-100'
                                                         }`}
                                                 >
                                                     {hq.is_active ? <LuCheck size={16} strokeWidth={3} /> : <LuX size={16} strokeWidth={3} />}
