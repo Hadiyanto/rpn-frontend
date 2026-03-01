@@ -86,6 +86,7 @@ export default function GuestOrderPage() {
     const [menus, setMenus] = useState<any[]>([]);
     const [variants, setVariants] = useState<any[]>([]);
     const [quotas, setQuotas] = useState<any[]>([]);
+    const [availableHours, setAvailableHours] = useState<any[]>([]);
 
     useEffect(() => {
         // Fetch menus and variants
@@ -102,6 +103,23 @@ export default function GuestOrderPage() {
         }).catch(console.error);
     }, []);
 
+    // Fetch Date-specific Hourly Quotas whenever pickup_date changes
+    useEffect(() => {
+        if (!form.pickup_date) {
+            setAvailableHours([]);
+            return;
+        }
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        fetch(`${apiUrl}/api/hourly-quota/availability?date=${form.pickup_date}`)
+            .then(r => r.json())
+            .then(json => {
+                if (json.status === 'ok') {
+                    setAvailableHours(json.data);
+                }
+            })
+            .catch(console.error);
+    }, [form.pickup_date]);
+
     // Filter to only enable dates that exist in the daily_quota table and have remaining_qty > 0
     const filterPassedDates = (time: Date) => {
         // Build Local YYYY-MM-DD reliably avoiding UTC shifts
@@ -112,6 +130,25 @@ export default function GuestOrderPage() {
 
         const q = quotas.find(q => q.date === dateString);
         return q ? q.remaining_qty > 0 : false;
+    };
+
+    // Calculate remaining quota for a specific hour block based on the selected date
+    const getIsHourAvailable = (hStr: string) => {
+        if (!form.pickup_date) return false;
+
+        // Find if this hour has a specific hourly setup active
+        const hq = availableHours.find(h => h.time_str === hStr && h.is_active);
+
+        // If no explicit hourly quota rule exists, it means that hour is CLOSED
+        if (!hq) return false;
+
+        // Count how many we want to order treating HALF as 0.5
+        const requestedQty = form.pesanan.reduce((sum, item) => {
+            if (!item.name) return sum;
+            return sum + (item.box_type === 'HALF' ? item.qty * 0.5 : item.qty);
+        }, 0);
+
+        return requestedQty <= hq.remaining_qty;
     };
 
     const handleReviewOrder = () => {
@@ -422,22 +459,28 @@ export default function GuestOrderPage() {
                                             </div>
                                             <div className="p-1.5 space-y-0.5">
                                                 {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
-                                                    const h = String(hNum).padStart(2, '0');
-                                                    const isSelected = form.pickup_time.split(':')[0] === h;
+                                                    const hStr = String(hNum).padStart(2, '0') + ':00';
+                                                    const hDisplay = String(hNum).padStart(2, '0');
+                                                    const isSelected = form.pickup_time.split(':')[0] === hDisplay;
+                                                    const isAvail = getIsHourAvailable(hStr);
+
                                                     return (
                                                         <button
-                                                            key={h}
+                                                            key={hDisplay}
                                                             type="button"
+                                                            disabled={!isAvail}
                                                             onClick={() => {
                                                                 const mm = form.pickup_time.split(':')[1] || '00';
-                                                                setForm(f => ({ ...f, pickup_time: `${h}:${mm}` }));
+                                                                setForm(f => ({ ...f, pickup_time: `${hDisplay}:${mm}` }));
                                                             }}
-                                                            className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected
+                                                            className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail
+                                                                ? 'opacity-30 cursor-not-allowed bg-black/5 text-primary/40'
+                                                                : isSelected
                                                                     ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
                                                                     : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
                                                                 }`}
                                                         >
-                                                            {h}
+                                                            {hDisplay}
                                                         </button>
                                                     );
                                                 })}
@@ -462,8 +505,8 @@ export default function GuestOrderPage() {
                                                                 // Auto close logic can be enabled if both are filled, but manual close is better for UX here
                                                             }}
                                                             className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected
-                                                                    ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
-                                                                    : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
+                                                                ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
+                                                                : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
                                                                 }`}
                                                         >
                                                             {m}

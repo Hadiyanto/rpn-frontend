@@ -16,14 +16,19 @@ export default function ConfigPage() {
     const [menus, setMenus] = useState<any[]>([]);
     const [variants, setVariants] = useState<any[]>([]);
     const [quotas, setQuotas] = useState<any[]>([]);
+    const [hourlyQuotas, setHourlyQuotas] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     const [isQuotaOpen, setIsQuotaOpen] = useState(true);
+    const [isHourlyQuotaOpen, setIsHourlyQuotaOpen] = useState(true);
     const [isMenuOpen, setIsMenuOpen] = useState(true);
     const [isVariantOpen, setIsVariantOpen] = useState(true);
 
     const [newQuotaDate, setNewQuotaDate] = useState('');
     const [newQuotaQty, setNewQuotaQty] = useState('50');
+
+    const [newHourlyTime, setNewHourlyTime] = useState('12:00');
+    const [newHourlyQty, setNewHourlyQty] = useState('10');
 
     // Toast state
     const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -38,18 +43,21 @@ export default function ConfigPage() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [mRes, vRes, qRes] = await Promise.all([
+            const [mRes, vRes, qRes, hqRes] = await Promise.all([
                 fetch(`${apiUrl}/api/menu`),
                 fetch(`${apiUrl}/api/variants`),
                 fetch(`${apiUrl}/api/daily-quota`),
+                fetch(`${apiUrl}/api/hourly-quota`),
             ]);
             const mData = await mRes.json();
             const vData = await vRes.json();
             const qData = await qRes.json();
+            const hqData = await hqRes.json();
 
             if (mData.status === 'ok') setMenus(mData.data);
             if (vData.status === 'ok') setVariants(vData.data);
             if (qData.status === 'ok') setQuotas(qData.data);
+            if (hqData.status === 'ok') setHourlyQuotas(hqData.data);
         } catch (e) {
             console.error(e);
         } finally {
@@ -137,6 +145,59 @@ export default function ConfigPage() {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ qty }),
+            });
+            if (res.ok) fetchData();
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const addHourlyQuota = async () => {
+        if (!newHourlyTime || !newHourlyQty) {
+            showToast('⚠️ Peringatan', 'Pilih jam dan isi kuota terlebih dahulu', 'error');
+            return;
+        }
+        try {
+            const res = await fetch(`${apiUrl}/api/hourly-quota`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ time_str: newHourlyTime, qty: parseInt(newHourlyQty, 10), is_active: true }),
+            });
+            const json = await res.json();
+            if (json.status === 'ok') {
+                showToast('✅ Berhasil', 'Kuota Per Jam ditambahkan!', 'success');
+                // Optional: reset fields
+                fetchData();
+            } else {
+                showToast('❌ Gagal', json.message || 'Gagal menambah kuota', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('❌ Error', 'Error saat menambah kuota', 'error');
+        }
+    };
+
+    const updateHourlyQuotaQty = async (id: number, time_str: string, is_active: boolean, currentQty: number, newQtyStr: string) => {
+        const qty = parseInt(newQtyStr, 10);
+        if (isNaN(qty) || qty === currentQty) return;
+        try {
+            const res = await fetch(`${apiUrl}/api/hourly-quota`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ time_str, qty, is_active }),
+            });
+            if (res.ok) fetchData();
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const toggleHourlyQuotaActive = async (id: number, time_str: string, is_active: boolean, qty: number) => {
+        try {
+            const res = await fetch(`${apiUrl}/api/hourly-quota`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ time_str, qty, is_active: !is_active }),
             });
             if (res.ok) fetchData();
         } catch (e) {
@@ -256,6 +317,97 @@ export default function ConfigPage() {
                                             </div>
                                         );
                                     })}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </section>
+
+                {/* Hourly Quota Section */}
+                <section>
+                    <button
+                        onClick={() => setIsHourlyQuotaOpen(!isHourlyQuotaOpen)}
+                        className="w-full text-left flex items-center justify-between border-b-2 border-primary/10 pb-2 mb-4 group"
+                    >
+                        <h2 className="text-lg font-bold text-primary flex items-center gap-2">
+                            Kuota Per Jam (Universal)
+                            <span className="bg-primary/10 px-2 py-0.5 rounded-full text-xs">{hourlyQuotas.length}</span>
+                        </h2>
+                        {isHourlyQuotaOpen ? <LuChevronUp className="text-primary/60 group-hover:text-primary transition-colors" /> : <LuChevronDown className="text-primary/60 group-hover:text-primary transition-colors" />}
+                    </button>
+
+                    {isHourlyQuotaOpen && (
+                        <>
+                            {/* Add Hourly Quota Form */}
+                            <div className="bg-white rounded-2xl p-4 shadow-sm mb-4 flex flex-wrap gap-3 items-end animate-in fade-in slide-in-from-top-2">
+                                <div className="w-24 space-y-1.5 flex flex-col">
+                                    <label className="text-[10px] font-black uppercase text-primary/60">Jam Pickup</label>
+                                    <select
+                                        value={newHourlyTime}
+                                        onChange={e => setNewHourlyTime(e.target.value)}
+                                        className="w-full h-10 px-2 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                    >
+                                        {[11, 12, 13, 14, 15, 16, 17].map(h => {
+                                            const hh = String(h).padStart(2, '0') + ':00';
+                                            return <option key={hh} value={hh}>{hh}</option>;
+                                        })}
+                                    </select>
+                                </div>
+                                <div className="w-24 space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60">Limit (Box)</label>
+                                    <input
+                                        type="number"
+                                        value={newHourlyQty}
+                                        onChange={e => setNewHourlyQty(e.target.value)}
+                                        className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                    />
+                                </div>
+                                <button
+                                    onClick={addHourlyQuota}
+                                    className="h-10 px-4 bg-primary text-brand-yellow font-bold text-sm rounded-xl hover:opacity-90 transition-opacity"
+                                >
+                                    Simpan Jam
+                                </button>
+                            </div>
+
+                            {loading ? (
+                                <div className="animate-pulse space-y-3">
+                                    <div className="h-12 bg-white/50 rounded-2xl"></div>
+                                </div>
+                            ) : hourlyQuotas.length === 0 ? (
+                                <p className="text-sm font-medium text-primary/50 text-center py-4">Belum ada aturan kuota jam yang dibuat.</p>
+                            ) : (
+                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 animate-in fade-in slide-in-from-top-4">
+                                    {hourlyQuotas.map((hq) => (
+                                        <div key={hq.id} className="bg-white rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                                            <div className="flex-1">
+                                                <p className="font-extrabold text-primary text-lg leading-tight">{hq.time_str}</p>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className={`w-2 h-2 rounded-full ${hq.is_active ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                                    <span className="text-[10px] font-black uppercase text-primary/40">{hq.is_active ? 'Aktif' : 'Nonaktif'}</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] font-black uppercase text-primary/50">Max:</span>
+                                                <input
+                                                    type="number"
+                                                    defaultValue={hq.qty}
+                                                    onBlur={e => updateHourlyQuotaQty(hq.id, hq.time_str, hq.is_active, hq.qty, e.target.value)}
+                                                    className="w-16 h-8 text-center text-sm font-bold bg-primary/5 border border-primary/10 rounded-lg text-primary focus:outline-none focus:border-primary/30"
+                                                />
+                                                <button
+                                                    onClick={() => toggleHourlyQuotaActive(hq.id, hq.time_str, hq.is_active, hq.qty)}
+                                                    title={hq.is_active ? "Nonaktifkan Jam Ini" : "Aktifkan Jam Ini"}
+                                                    className={`w-8 h-8 flex items-center justify-center rounded-lg border-2 transition-colors ${hq.is_active
+                                                            ? 'border-green-500/20 text-green-600 bg-green-50 hover:bg-green-100'
+                                                            : 'border-red-500/20 text-red-600 bg-red-50 hover:bg-red-100'
+                                                        }`}
+                                                >
+                                                    {hq.is_active ? <LuCheck size={16} strokeWidth={3} /> : <LuX size={16} strokeWidth={3} />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </>

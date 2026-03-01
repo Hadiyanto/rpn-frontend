@@ -18,7 +18,9 @@ import {
     LuPencil,
     LuWallet,
     LuCheck,
-    LuPackageCheck
+    LuPackageCheck,
+    LuMessageCircle,
+    LuSend
 } from 'react-icons/lu';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -182,10 +184,60 @@ export default function OrdersPage() {
 
     const [updatingPaymentId, setUpdatingPaymentId] = useState<number | null>(null);
 
+    // WhatsApp Modal State
+    const [waModalOpen, setWaModalOpen] = useState(false);
+    const [waOrder, setWaOrder] = useState<Order | null>(null);
+    const [waMessage, setWaMessage] = useState('');
+    const [sendingWa, setSendingWa] = useState(false);
+
+    const openWAModal = (order: Order) => {
+        setWaOrder(order);
+
+        let itemsStr = '';
+        if (order.items && order.items.length > 0) {
+            itemsStr = order.items.map(item => `- ${item.qty} ${item.box_type === 'HALF' ? 'Half Box' : 'Full Box'} ${item.name}`).join('\n');
+        }
+
+        const timeStr = order.pickup_time ? ` jam ${order.pickup_time}` : '';
+        const msg = `Halo Kak ${order.customer_name},\n\nTerkait pesanan RPN untuk tanggal ${formatPickupDate(order.pickup_date)}${timeStr}:\n\n${itemsStr}\n\n`;
+
+        setWaMessage(msg);
+        setWaModalOpen(true);
+    };
+
+    const sendWAMessage = async () => {
+        if (!waOrder) return;
+        setSendingWa(true);
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+            const res = await fetch(`${apiUrl}/api/whatsapp/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    recipient: 'individual',
+                    phone: waOrder.customer_phone,
+                    message: waMessage
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setWaModalOpen(false);
+            } else {
+                alert(data.message || 'Gagal mengirim pesan WA');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Terjadi kesalahan saat mengirim WA');
+        } finally {
+            setSendingWa(false);
+        }
+    };
+
     // Dynamic Options Data
     const [menus, setMenus] = useState<any[]>([]);
     const [variants, setVariants] = useState<any[]>([]);
     const [quotas, setQuotas] = useState<any[]>([]);
+    const [availableHours, setAvailableHours] = useState<any[]>([]);
 
     useEffect(() => {
         const fetchOptions = async () => {
@@ -264,6 +316,36 @@ export default function OrdersPage() {
         payment_method: '' as '' | 'TRANSFER' | 'CASH',
         pesanan: [emptyItem()],
     });
+
+    useEffect(() => {
+        if (!form.pickup_date) {
+            setAvailableHours([]);
+            return;
+        }
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        fetch(`${apiUrl}/api/hourly-quota/availability?date=${form.pickup_date}`)
+            .then(r => r.json())
+            .then(json => {
+                if (json.status === 'ok') {
+                    setAvailableHours(json.data);
+                }
+            })
+            .catch(console.error);
+    }, [form.pickup_date]);
+
+    const getIsHourAvailable = (hStr: string) => {
+        if (!form.pickup_date) return false;
+        const hq = availableHours.find(h => h.time_str === hStr && h.is_active);
+
+        // If no explicit hourly quota rule exists, it means that hour is CLOSED
+        if (!hq) return false;
+
+        const requestedQty = form.pesanan.reduce((sum, item) => {
+            if (!item.name) return sum;
+            return sum + (item.box_type === 'HALF' ? item.qty * 0.5 : item.qty);
+        }, 0);
+        return requestedQty <= hq.remaining_qty;
+    };
 
     const resetForm = () => setForm({
         customer_name: '',
@@ -590,9 +672,14 @@ export default function OrdersPage() {
                                             </div>
                                             <div>
                                                 <h3 className="font-bold text-primary text-base">{order.customer_name}</h3>
-                                                <a href={`https://wa.me/${order.customer_phone?.replace(/^0/, '62')}`} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-brand-yellow/80 hover:text-brand-yellow hover:underline flex flex-row items-center gap-1">
-                                                    {order.customer_phone}
-                                                </a>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <a href={`https://wa.me/${order.customer_phone?.replace(/^0/, '62')}`} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-brand-yellow/80 hover:text-brand-yellow hover:underline flex flex-row items-center gap-1">
+                                                        {order.customer_phone}
+                                                    </a>
+                                                    <button onClick={() => openWAModal(order)} className="p-1 bg-green-100 text-green-600 rounded-full hover:bg-green-200 transition-colors" title="Kirim WA melalui Server" aria-label="Send WA">
+                                                        <LuMessageCircle size={14} />
+                                                    </button>
+                                                </div>
                                                 <p className="text-xs text-primary/50 flex items-center gap-1 mt-0.5">
                                                     <LuCalendarDays className="text-[13px]" />
                                                     {formatPickupDate(order.pickup_date)}
@@ -913,22 +1000,28 @@ export default function OrdersPage() {
                                                         </div>
                                                         <div className="p-1.5 space-y-0.5">
                                                             {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
-                                                                const h = String(hNum).padStart(2, '0');
-                                                                const isSelected = form.pickup_time.split(':')[0] === h;
+                                                                const hStr = String(hNum).padStart(2, '0') + ':00';
+                                                                const hDisplay = String(hNum).padStart(2, '0');
+                                                                const isSelected = form.pickup_time.split(':')[0] === hDisplay;
+                                                                const isAvail = getIsHourAvailable(hStr);
+
                                                                 return (
                                                                     <button
-                                                                        key={h}
+                                                                        key={hDisplay}
                                                                         type="button"
+                                                                        disabled={!isAvail}
                                                                         onClick={() => {
                                                                             const mm = form.pickup_time.split(':')[1] || '00';
-                                                                            setForm(f => ({ ...f, pickup_time: `${h}:${mm}` }));
+                                                                            setForm(f => ({ ...f, pickup_time: `${hDisplay}:${mm}` }));
                                                                         }}
-                                                                        className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected
+                                                                        className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail
+                                                                            ? 'opacity-30 cursor-not-allowed bg-black/5 text-primary/40'
+                                                                            : isSelected
                                                                                 ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
                                                                                 : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
                                                                             }`}
                                                                     >
-                                                                        {h}
+                                                                        {hDisplay}
                                                                     </button>
                                                                 );
                                                             })}
@@ -952,8 +1045,8 @@ export default function OrdersPage() {
                                                                             setForm(f => ({ ...f, pickup_time: `${hh}:${m}` }));
                                                                         }}
                                                                         className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected
-                                                                                ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
-                                                                                : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
+                                                                            ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
+                                                                            : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
                                                                             }`}
                                                                     >
                                                                         {m}
@@ -1168,6 +1261,51 @@ export default function OrdersPage() {
                             className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
                             onClick={e => e.stopPropagation()}
                         />
+                    </div>
+                </div>
+            )}
+
+            {/* WhatsApp Modal */}
+            {waModalOpen && waOrder && (
+                <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center bg-black/40 backdrop-blur-sm sm:p-4 animate-in fade-in duration-200" onClick={() => setWaModalOpen(false)}>
+                    <div className="bg-[#fcfaf2] w-full sm:max-w-md rounded-t-[32px] sm:rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="flex justify-between items-center px-6 py-5 border-b border-primary/10">
+                            <h2 className="font-extrabold text-primary text-xl tracking-tight">Kirim WhatsApp</h2>
+                            <button onClick={() => setWaModalOpen(false)} className="w-8 h-8 rounded-full bg-primary/5 hover:bg-primary/10 flex items-center justify-center text-primary/60 outline-none transition-colors">
+                                <LuX className="text-lg" />
+                            </button>
+                        </div>
+                        {/* Body */}
+                        <div className="p-6 flex flex-col gap-4 overflow-y-auto">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Penerima</label>
+                                <div className="px-4 py-3 rounded-xl border border-primary/10 bg-primary/5 text-primary text-sm font-bold flex items-center justify-between">
+                                    <span>{waOrder.customer_name}</span>
+                                    <span className="text-brand-yellow/80">{waOrder.customer_phone}</span>
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Pesan</label>
+                                <textarea
+                                    className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-white text-primary text-sm font-medium focus:outline-none focus:border-green-500 transition-colors resize-none"
+                                    rows={8}
+                                    value={waMessage}
+                                    onChange={e => setWaMessage(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        {/* Footer */}
+                        <div className="px-6 py-5 border-t border-primary/10 bg-white">
+                            <button
+                                onClick={sendWAMessage}
+                                disabled={sendingWa || !waMessage.trim()}
+                                className="w-full flex items-center justify-center gap-2 h-14 bg-green-500 text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-green-500/30 active:scale-[0.98] transition-transform disabled:opacity-50"
+                            >
+                                <LuSend className="text-lg" />
+                                {sendingWa ? 'Mengirim...' : 'Kirim Pesan WA'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
