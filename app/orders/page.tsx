@@ -357,7 +357,7 @@ export default function OrdersPage() {
     const resetForm = () => setForm({
         customer_name: '',
         customer_phone: '',
-        pickup_date: getTodayStr(),
+        pickup_date: '',
         pickup_time: '11:00',
         note: '',
         payment_method: '',

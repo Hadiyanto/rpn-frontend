@@ -353,7 +353,7 @@ export default function GuestOrderPage() {
                                 setForm({
                                     customer_name: '',
                                     customer_phone: '',
-                                    pickup_date: getTodayStr(),
+                                    pickup_date: '',
                                     pickup_time: ':',
                                     note: '',
                                     payment_method: '',
