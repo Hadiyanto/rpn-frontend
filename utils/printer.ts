@@ -126,7 +126,7 @@ export const printReceipt = async (data: ReceiptData) => {
     }
 };
 export interface OrderPrintItem {
-    box_type: 'FULL' | 'HALF';
+    box_type: 'FULL' | 'HALF' | 'HAMPERS';
     name: string;
     qty: number;
 }
@@ -205,6 +205,7 @@ export const printOrder = async (data: OrderReceiptData) => {
 
         const fullItems = data.items.filter(i => i.box_type === 'FULL');
         const halfItems = data.items.filter(i => i.box_type === 'HALF');
+        const hampersItems = data.items.filter(i => i.box_type === 'HAMPERS');
 
         if (fullItems.length > 0) {
             chain = chain.bold(true).line('[ FULL BOX ]').bold(false);
@@ -226,6 +227,18 @@ export const printOrder = async (data: OrderReceiptData) => {
             });
             const totalHalf = halfItems.reduce((s, i) => s + i.qty, 0);
             chain = chain.line(`  Total: ${totalHalf} box`);
+            chain = chain.newline();
+        }
+
+        if (hampersItems.length > 0) {
+            if (fullItems.length > 0 || halfItems.length > 0) chain = chain.line('');
+            chain = chain.bold(true).line('[ HAMPERS ]').bold(false);
+            hampersItems.forEach(item => {
+                chain = chain.line(`  ${item.qty}x ${item.name}`);
+                chain = chain.newline();
+            });
+            const totalHampers = hampersItems.reduce((s, i) => s + i.qty, 0);
+            chain = chain.line(`  Total: ${totalHampers} box`);
             chain = chain.newline();
         }
 

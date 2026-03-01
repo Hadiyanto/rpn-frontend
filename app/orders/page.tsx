@@ -20,7 +20,10 @@ import {
     LuCheck,
     LuPackageCheck,
     LuMessageCircle,
-    LuSend
+    LuSend,
+    LuLayoutGrid,
+    LuLayoutTemplate,
+    LuGift
 } from 'react-icons/lu';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -31,7 +34,7 @@ import { useUserRole } from '@/hooks/useUserRole';
 
 interface OrderItem {
     id?: number;
-    box_type: 'FULL' | 'HALF';
+    box_type: 'FULL' | 'HALF' | 'HAMPERS';
     name: string;
     qty: number;
 }
@@ -311,10 +314,10 @@ export default function OrdersPage() {
         customer_name: '',
         customer_phone: '',
         pickup_date: getTodayStr(),
-        pickup_time: '11:00',
+        pickup_time: ':',
         note: '',
         payment_method: '' as '' | 'TRANSFER' | 'CASH',
-        pesanan: [emptyItem()],
+        pesanan: [{ box_type: 'FULL' as 'FULL' | 'HALF' | 'HAMPERS', name: '', qty: 1 }]
     });
 
     useEffect(() => {
@@ -727,15 +730,15 @@ export default function OrdersPage() {
                                                 <div className="flex items-center gap-2">
                                                     <LuPackage className="text-primary/50 text-sm shrink-0" />
                                                     <span className="text-sm font-semibold text-primary">
-                                                        {item.name}
-                                                        <span className="text-primary/50 font-medium"> x{item.qty}</span>
+                                                        {item.qty}x {item.box_type === 'FULL' ? 'Box Besar' : item.box_type === 'HALF' ? 'Box Kecil' : 'Hampers'}
+                                                        <span className="text-primary/50 font-medium"> {item.name}</span>
                                                     </span>
                                                 </div>
                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${item.box_type === 'FULL'
                                                     ? 'bg-primary/10 text-primary'
                                                     : 'bg-primary/5 text-primary/60'
                                                     }`}>
-                                                    {item.box_type} BOX
+                                                    {item.box_type}
                                                 </span>
                                             </div>
                                         ))}
@@ -846,7 +849,7 @@ export default function OrdersPage() {
                                                             pickup_time: order.pickup_time?.slice(0, 5) || '11:00',
                                                             note: order.note || '',
                                                             payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'CASH',
-                                                            pesanan: order.items.map(i => ({ box_type: i.box_type, name: i.name, qty: i.qty })),
+                                                            pesanan: order.items.map(i => ({ box_type: i.box_type as 'FULL' | 'HALF' | 'HAMPERS', name: i.name, qty: i.qty })),
                                                         });
                                                         setShowSheet(true);
                                                     }}
@@ -1074,59 +1077,90 @@ export default function OrdersPage() {
                                     </div>
                                     {form.pesanan.map((item, idx) => (
                                         <div key={idx} className="bg-primary/5 rounded-2xl p-4 space-y-3">
-                                            <div className="flex gap-2">
-                                                {/* Box Type */}
-                                                <div className="flex rounded-xl overflow-hidden border-2 border-primary/10">
-                                                    {(['FULL', 'HALF'] as const).map(bt => (
+                                            <div className="flex flex-col gap-4">
+                                                <div className="flex justify-between items-center pb-2 border-b border-primary/5">
+                                                    <span className="text-[11px] font-black uppercase text-primary/60 tracking-widest">Item #{idx + 1}</span>
+                                                    {form.pesanan.length > 1 && (
                                                         <button
-                                                            key={bt}
-                                                            onClick={() => {
-                                                                setForm(f => ({
-                                                                    ...f,
-                                                                    pesanan: f.pesanan.map((p, i) => {
-                                                                        if (i !== idx) return p;
-                                                                        let newP = { ...p, box_type: bt };
-                                                                        if (bt === 'HALF' && p.name && p.name.startsWith('Mix ')) {
-                                                                            const parts = p.name.replace('Mix ', '').split(' Dan ');
-                                                                            if (parts.length > 1) {
-                                                                                newP.name = parts[0];
-                                                                            }
-                                                                        }
-                                                                        return newP;
-                                                                    })
-                                                                }));
-                                                            }}
-                                                            className={`px-3 py-2 text-[10px] font-black uppercase transition-all ${item.box_type === bt ? 'bg-primary text-brand-yellow' : 'text-primary/50 hover:bg-black/5'
-                                                                }`}
-                                                        >{bt}</button>
-                                                    ))}
+                                                            onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.filter((_, i) => i !== idx) }))}
+                                                            className="text-[10px] font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1"
+                                                        >
+                                                            <LuTrash2 /> Hapus
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                {/* Qty */}
-                                                <div className="flex items-center gap-2 bg-white rounded-xl border-2 border-primary/10 px-2 sm:px-3">
-                                                    <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: Math.max(1, p.qty - 1) } : p) }))} className="text-primary font-black text-lg w-7 sm:w-6 h-full min-h-[38px] flex items-center justify-center hover:bg-black/5 rounded-md">−</button>
-                                                    <span className="text-sm font-black text-primary w-5 text-center">{item.qty}</span>
-                                                    <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: p.qty + 1 } : p) }))} className="text-primary font-black text-lg w-7 sm:w-6 h-full min-h-[38px] flex items-center justify-center hover:bg-black/5 rounded-md">+</button>
+
+                                                {/* Box Type Cards and Qty */}
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1">
+                                                        {(['FULL', 'HALF', 'HAMPERS'] as const).map(bt => {
+                                                            const isSelected = item.box_type === bt;
+                                                            const menuData = menus.find(m => m.name === bt);
+                                                            const priceStr = menuData ? `Rp ${(menuData.price / 1000)}k` : '...';
+
+                                                            let Icon = LuLayoutGrid;
+                                                            if (bt === 'HALF') Icon = LuLayoutTemplate;
+                                                            if (bt === 'HAMPERS') Icon = LuGift;
+
+                                                            return (
+                                                                <button
+                                                                    key={bt}
+                                                                    onClick={() => {
+                                                                        setForm(f => ({
+                                                                            ...f,
+                                                                            pesanan: f.pesanan.map((p, i) => {
+                                                                                if (i !== idx) return p;
+                                                                                let newP = { ...p, box_type: bt };
+                                                                                if (bt === 'HALF' && p.name && p.name.startsWith('Mix ')) {
+                                                                                    const parts = p.name.replace('Mix ', '').split(' Dan ');
+                                                                                    if (parts.length > 1) {
+                                                                                        newP.name = parts[0];
+                                                                                    }
+                                                                                }
+                                                                                return newP;
+                                                                            })
+                                                                        }));
+                                                                    }}
+                                                                    className={`flex-1 min-w-[65px] rounded-xl p-2.5 flex flex-col items-center relative transition-all shadow-sm border-2 ${isSelected
+                                                                        ? 'bg-white border-blue-600'
+                                                                        : 'bg-white/50 border-primary/10 opacity-70 hover:opacity-100'
+                                                                        }`}
+                                                                >
+                                                                    {isSelected && (
+                                                                        <div className="absolute -top-1.5 -right-1.5 bg-blue-600 rounded-full h-4 w-4 flex items-center justify-center shadow-sm">
+                                                                            <LuCheck className="text-[10px] text-white stroke-[3]" />
+                                                                        </div>
+                                                                    )}
+                                                                    <Icon className={`text-[22px] mb-1.5 ${isSelected ? 'text-primary' : 'text-primary/40'}`} />
+                                                                    <span className={`text-[10px] font-black uppercase tracking-tight leading-none ${isSelected ? 'text-primary' : 'text-primary/60'}`}>
+                                                                        {bt}
+                                                                    </span>
+                                                                    <span className={`text-[9px] font-medium leading-none mt-1 ${isSelected ? 'text-primary/70' : 'text-primary/40'}`}>
+                                                                        {priceStr}
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {/* Qty Controls */}
+                                                    <div className="flex items-center gap-1.5 bg-white rounded-xl border-2 border-primary/10 px-1 py-1 shadow-sm shrink-0">
+                                                        <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: Math.max(1, p.qty - 1) } : p) }))} className="text-primary font-black text-sm w-7 h-9 flex items-center justify-center hover:bg-black/5 rounded-lg transition-colors">−</button>
+                                                        <span className="text-[13px] font-black text-primary min-w-[16px] text-center">{item.qty}</span>
+                                                        <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: p.qty + 1 } : p) }))} className="text-primary font-black text-sm w-7 h-9 flex items-center justify-center hover:bg-black/5 rounded-lg transition-colors">+</button>
+                                                    </div>
                                                 </div>
-                                                {/* Delete */}
-                                                {form.pesanan.length > 1 && (
-                                                    <button
-                                                        onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.filter((_, i) => i !== idx) }))}
-                                                        className="ml-auto w-10 h-10 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
-                                                    >
-                                                        <LuTrash2 className="text-sm" />
-                                                    </button>
-                                                )}
                                             </div>
-                                            {/* Item name as Checkboxes (Max 2) */}
+                                            {/* Item name as Checkboxes (Max 2 for FULL/HAMPERS) */}
                                             <div className="pt-2">
                                                 <label className="text-[10px] font-black uppercase tracking-wider text-primary/60 block mb-2">
-                                                    Pilih Rasa (Max {item.box_type === 'FULL' ? 2 : 1} Varian)
+                                                    Pilih Rasa (Max {item.box_type === 'HAMPERS' ? 3 : item.box_type === 'FULL' ? 2 : 1} Varian)
                                                 </label>
                                                 <div className="grid grid-cols-2 lg:grid-cols-2 gap-2">
                                                     {variants
                                                         .filter(v => v.is_active)
                                                         .map(v => {
-                                                            const maxFlavors = item.box_type === 'FULL' ? 2 : 1;
+                                                            const maxFlavors = item.box_type === 'HAMPERS' ? 3 : item.box_type === 'FULL' ? 2 : 1;
                                                             let selectedFlavors: string[] = [];
                                                             if (item.name) {
                                                                 if (item.name.startsWith('Mix ')) {
@@ -1136,8 +1170,13 @@ export default function OrdersPage() {
                                                                 }
                                                             }
 
+                                                            const vName = (v.name || v.variant_name || '').toLowerCase();
+                                                            const isKraftBomb = vName.includes('kraf') && vName.includes('bomb');
+                                                            const isKraftCarnation = vName.includes('kraf') && vName.includes('carnation');
+                                                            const isKraftDisabled = item.box_type === 'HAMPERS' && (isKraftBomb || isKraftCarnation);
+
                                                             const isChecked = selectedFlavors.includes(v.variant_name);
-                                                            const isDisabled = !isChecked && selectedFlavors.length >= maxFlavors;
+                                                            const isDisabled = isKraftDisabled || (!isChecked && selectedFlavors.length >= maxFlavors);
 
                                                             return (
                                                                 <label
