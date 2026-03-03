@@ -75,13 +75,13 @@ const DAY_ID: Record<number, string> = {
 
 function formatDate(dateStr: string) {
     const date = new Date(`${dateStr}T00:00:00+07:00`);
-    const day = DAY_ID[date.getDay()] ?? '';
+    const day = date.toLocaleDateString('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
     return `${day}, ${date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
 }
 
 function formatChipDate(dateStr: string) {
     const date = new Date(`${dateStr}T00:00:00+07:00`);
-    const day = DAY_ID[date.getDay()] ?? '';
+    const day = date.toLocaleDateString('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
     return `${day.slice(0, 3)} / ${date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' })}`;
 }
 

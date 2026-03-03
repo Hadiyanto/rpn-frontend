@@ -106,14 +106,14 @@ function avatarColor(id: number) {
 
 function formatPickupDate(dateStr: string) {
     const date = new Date(`${dateStr}T00:00:00+07:00`);
-    const day = DAY_ID[date.getDay()] ?? '';
+    const day = date.toLocaleDateString('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
     const formatted = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     return `${day}, ${formatted}`;
 }
 
 function formatChipDate(dateStr: string) {
     const date = new Date(`${dateStr}T00:00:00+07:00`);
-    const day = DAY_ID[date.getDay()] ?? '';
+    const day = date.toLocaleDateString('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
     const dd = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' });
     return `${day} / ${dd}`;
 }
