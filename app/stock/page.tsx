@@ -55,17 +55,26 @@ export default function StockPage() {
             return;
         }
 
-        const qty = parseFloat(qtyChange);
-        if (isNaN(qty) || qty <= 0) {
-            showToast('⚠️ Peringatan', 'Harap masukkan jumlah yang valid (lebih dari 0).', 'error');
+        const inputQty = parseFloat(qtyChange);
+        if (isNaN(inputQty) || inputQty < 0) {
+            showToast('⚠️ Peringatan', 'Harap masukkan jumlah yang valid.', 'error');
             return;
         }
 
-        const signedQty = isIncrement ? qty : -qty;
-        await executeAdjustment(selectedStock.id, signedQty, isIncrement ? 'IN' : 'OUT', notes);
+        // Jika Unchecked (isIncrement = false): Mode Sisa Stok (Target)
+        // Jika Checked (isIncrement = true): Mode Tambah Stok (Delta)
+        const type = isIncrement ? 'IN' : (inputQty < Number(selectedStock.qty) ? 'OUT' : 'IN');
+
+        await executeAdjustment(
+            selectedStock.id,
+            inputQty,
+            type,
+            notes || (isIncrement ? 'Stok tambahan' : 'Penyesuaian stok fisik'),
+            !isIncrement // is_target = true jika mode Sisa Stok (unchecked)
+        );
     };
 
-    const executeAdjustment = async (stock_id: number, qty_change: number, type: string, n: string) => {
+    const executeAdjustment = async (stock_id: number, qty_change: number, type: string, n: string, is_target: boolean = false) => {
         try {
             const res = await fetch(`${apiUrl}/api/stocks/adjust`, {
                 method: 'POST',
@@ -74,6 +83,7 @@ export default function StockPage() {
                     stock_id,
                     qty_change,
                     type,
+                    is_target,
                     notes: n
                 }),
             });
@@ -209,42 +219,41 @@ export default function StockPage() {
                             </div>
 
                             <div className="space-y-4">
-                                <div className="flex items-center justify-between p-3 bg-brand-yellow/5 rounded-xl border border-brand-yellow/20">
+                                <div className="flex items-center justify-between p-3 bg-brand-yellow/5 rounded-xl border border-brand-yellow/20 cursor-pointer" onClick={() => setIsIncrement(!isIncrement)}>
                                     <div>
-                                        <p className="text-xs font-extrabold text-primary uppercase">Tipe Penyesuaian</p>
-                                        <p className="text-[10px] font-bold text-primary/50">Tentukan stok masuk atau keluar</p>
+                                        <p className="text-xs font-extrabold text-primary uppercase">Stok Masuk (IN)</p>
+                                        <p className="text-[10px] font-bold text-primary/50">Centang jika ini adalah stok tambahan</p>
                                     </div>
-                                    <div className="flex bg-white p-1 rounded-lg border border-gray-200 shadow-sm">
-                                        <button
-                                            onClick={() => setIsIncrement(false)}
-                                            className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${!isIncrement ? 'bg-red-500 text-white shadow-md' : 'text-primary/40'}`}
-                                        >
-                                            Out
-                                        </button>
-                                        <button
-                                            onClick={() => setIsIncrement(true)}
-                                            className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${isIncrement ? 'bg-green-500 text-white shadow-md' : 'text-primary/40'}`}
-                                        >
-                                            In
-                                        </button>
-                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={isIncrement}
+                                        onChange={(e) => setIsIncrement(e.target.checked)}
+                                        className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
+                                    />
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase text-primary/60 ml-1">Jumlah {isIncrement ? 'Stok Masuk' : 'Stok Keluar'}</label>
+                                    <label className="text-[10px] font-black uppercase text-primary/60 ml-1">
+                                        {isIncrement ? 'Jumlah Tambahan' : 'Stok Tersedia (Sisa)'}
+                                    </label>
                                     <input
                                         type="number"
                                         inputMode="decimal"
                                         value={qtyChange}
                                         onChange={e => setQtyChange(e.target.value)}
-                                        placeholder="Contoh: 10"
+                                        placeholder={isIncrement ? "0" : selectedStock.qty.toString()}
                                         className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm font-bold text-primary focus:ring-2 focus:ring-primary/10 focus:border-primary outline-none transition-all placeholder:text-gray-300 placeholder:font-medium"
                                     />
                                     {qtyChange && !isNaN(parseFloat(qtyChange)) && (
                                         <p className="text-xs font-medium text-gray-500 ml-1 mt-1">
-                                            Hasil Akhir: <span className={`font-bold ${isIncrement ? 'text-green-600' : 'text-red-500'}`}>
-                                                {isIncrement ? (Number(selectedStock.qty) + parseFloat(qtyChange)) : (Number(selectedStock.qty) - parseFloat(qtyChange))}
+                                            Hasil Akhir: <span className={`font-bold ${isIncrement ? 'text-green-600' : (parseFloat(qtyChange) > Number(selectedStock.qty) ? 'text-green-600' : (parseFloat(qtyChange) < Number(selectedStock.qty) ? 'text-red-500' : 'text-primary'))}`}>
+                                                {isIncrement ? (Number(selectedStock.qty) + parseFloat(qtyChange)) : parseFloat(qtyChange)}
                                             </span> {selectedStock.unit}
+                                            {!isIncrement && parseFloat(qtyChange) !== Number(selectedStock.qty) && (
+                                                <span className="text-[10px] ml-2 opacity-60">
+                                                    ({parseFloat(qtyChange) - Number(selectedStock.qty) > 0 ? '+' : ''}{parseFloat(qtyChange) - Number(selectedStock.qty)})
+                                                </span>
+                                            )}
                                         </p>
                                     )}
                                 </div>
