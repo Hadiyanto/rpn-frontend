@@ -56,13 +56,13 @@ function normalizeVariant(name: string) {
     return n;
 }
 
-const DELIVERY_OPTIONS: { key: DeliveryMethod; label: string; desc: string; icon: any; hidden?: boolean }[] = [
+const DELIVERY_OPTIONS: { key: DeliveryMethod; label: string; desc: string; icon: any }[] = [
     { key: 'pickup', label: 'Pick Up Sendiri', desc: 'Customer datang langsung ke toko', icon: LuStore },
     { key: 'customer_delivery', label: 'Delivery Sendiri', desc: 'Customer atur kurir sendiri', icon: LuTruck },
-    { key: 'store_delivery', label: 'Store Delivery', desc: 'Toko yang mengirim ke customer', icon: LuMapPin, hidden: true },
+    { key: 'store_delivery', label: 'Store Delivery', desc: 'Toko yang mengirim ke customer', icon: LuMapPin },
 ];
 
-export default function OrderPage() {
+export default function AdminOrderPage() {
     const [submitting, setSubmitting] = useState(false);
     const [submittedOrder, setSubmittedOrder] = useState<any>(null);
     const [showConfirm, setShowConfirm] = useState(false);
@@ -300,8 +300,8 @@ export default function OrderPage() {
                 {/* Header */}
                 <div className="flex flex-col items-center justify-center px-5 py-8 border-b border-primary/10 bg-brand-yellow sm:rounded-t-3xl">
                     <LuPackage className="text-4xl text-primary mb-2 opacity-80" />
-                    <h1 className="text-2xl font-extrabold text-primary">Form Pesanan</h1>
-                    <p className="text-primary/60 text-sm mt-1">Silakan isi detail pesanan Anda</p>
+                    <h1 className="text-2xl font-extrabold text-primary">Form Pesanan Admin</h1>
+                    <p className="text-primary/60 text-sm mt-1">Input pesanan oleh staff / admin</p>
                 </div>
 
                 <div className="flex-1 px-5 py-6 space-y-6">
@@ -497,10 +497,10 @@ export default function OrderPage() {
                     </div>
 
                     {/* Delivery Method */}
-                    <div className="hidden space-y-3">
+                    <div className="space-y-3">
                         <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Metode Pengambilan *</label>
                         <div className="space-y-2">
-                            {DELIVERY_OPTIONS.filter(d => !d.hidden).map(({ key, label, desc, icon: Icon }) => {
+                            {DELIVERY_OPTIONS.map(({ key, label, desc, icon: Icon }) => {
                                 const isSelected = deliveryMethod === key;
                                 return (
                                     <button key={key} onClick={() => setDeliveryMethod(key)}
@@ -639,6 +639,8 @@ export default function OrderPage() {
                                 { label: 'No. WhatsApp', value: form.customer_phone },
                                 { label: 'Jadwal', value: `${form.pickup_date} pukul ${form.pickup_time}` },
                                 { label: 'Metode Bayar', value: form.payment_method },
+                                { label: 'Pengambilan', value: DELIVERY_OPTIONS.find(d => d.key === deliveryMethod)?.label },
+                                ...(deliveryMethod === 'store_delivery' ? [{ label: 'Alamat Kirim', value: deliveryAddress }, { label: 'Koordinat', value: destLat ? `${destLat.toFixed(5)}, ${destLng?.toFixed(5)}` : '-' }] : []),
                             ].map(({ label, value }) => (
                                 <div key={label} className="flex justify-between border-b border-primary/10 pb-2 gap-4">
                                     <span className="text-primary/50 shrink-0">{label}</span>
