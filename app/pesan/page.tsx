@@ -113,12 +113,13 @@ export default function OrderPage() {
         }).catch(console.error);
     }, []);
 
-    useEffect(() => {
-        if (!form.pickup_date) { setAvailableHours([]); return; }
-        fetch(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
-            .then(r => r.json()).then(json => { if (json.status === 'ok') setAvailableHours(json.data); })
-            .catch(console.error);
-    }, [form.pickup_date]);
+    // Hourly quota check disabled — all active hours are treated as available
+    // useEffect(() => {
+    //     if (!form.pickup_date) { setAvailableHours([]); return; }
+    //     fetch(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
+    //         .then(r => r.json()).then(json => { if (json.status === 'ok') setAvailableHours(json.data); })
+    //         .catch(console.error);
+    // }, [form.pickup_date]);
 
     // Reverse geocode when pin dropped — fills address, extracts postal_code, auto-searches Biteship area
     const onMapClick = useCallback(async (lat: number, lng: number) => {
@@ -166,19 +167,8 @@ export default function OrderPage() {
         return q ? (q.remaining_qty > 0 || (q.remaining_hampers_qty || 0) > 0) : false;
     };
 
-    const getIsHourAvailable = (hStr: string) => {
-        if (!form.pickup_date) return false;
-        const hq = availableHours.find(h => h.time_str === hStr && h.is_active);
-        if (!hq) return false;
-        let requestedBox = 0, requestedHampers = 0;
-        form.pesanan.forEach(item => {
-            if (!item.name) return;
-            if (item.box_type === 'HALF') requestedBox += item.qty * 0.5;
-            else if (item.box_type === 'FULL') requestedBox += item.qty;
-            else if (item.box_type === 'HAMPERS') requestedHampers += item.qty;
-        });
-        return requestedBox <= hq.remaining_qty && requestedHampers <= (hq.remaining_hampers_qty || 0);
-    };
+    // Hourly quota disabled: always return true so all hours are selectable
+    const getIsHourAvailable = (_hStr: string) => true;
 
     const handleReviewOrder = () => {
         setErrorMessage('');
