@@ -18,7 +18,7 @@ interface OrderItem {
     id: number;
     qty: number;
     name: string;
-    box_type: 'FULL' | 'HALF';
+    box_type: 'FULL' | 'HALF' | 'HAMPERS';
 }
 
 interface Order {
@@ -34,9 +34,10 @@ interface Order {
 }
 
 // Fixed prices from menu table
-const PRICE: Record<'FULL' | 'HALF', number> = {
+const PRICE: Record<'FULL' | 'HALF' | 'HAMPERS', number> = {
     FULL: 65000,
     HALF: 35000,
+    HAMPERS: 135000, // standard hamper price, updates dynamically in DB elsewhere
 };
 
 function orderRevenue(order: Order): number {

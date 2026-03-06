@@ -24,6 +24,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), { ssr: false });
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const ORIGIN_AREA_ID = 'IDNP6IDNC148IDND841IDZ12750'; // Pancoran, Jakarta Selatan
 
 interface OrderItem {
     box_type: 'FULL' | 'HALF' | 'HAMPERS';
@@ -69,6 +70,9 @@ export default function AdminOrderPage() {
     const [errorMessage, setErrorMessage] = useState('');
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+    const [shippingFee, setShippingFee] = useState<number | null>(null);
+    const [shippingLoading, setShippingLoading] = useState(false);
 
     const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
         setToast({ title, body, type });
@@ -159,6 +163,81 @@ export default function AdminOrderPage() {
             setDeliveryAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
         }
     }, []);
+
+    const getBiteshipItems = useCallback(() => {
+        return form.pesanan
+            .filter(p => !!p.name)
+            .map(item => ({
+                name: `${item.box_type === 'FULL' ? 'Full Box' : item.box_type === 'HALF' ? 'Half Box' : 'Hampers'} - ${item.name}`,
+                description: `RPN ${item.box_type}`,
+                value: 50000,
+                length: item.box_type === 'FULL' ? 20 : 10,
+                width: item.box_type === 'FULL' ? 20 : 10,
+                height: 10,
+                weight: item.box_type === 'FULL' ? 1000 : 500,
+                quantity: item.qty || 1
+            }));
+    }, [form.pesanan]);
+
+    // Auto-fetch shipping rates when conditions are met
+    useEffect(() => {
+        if (deliveryMethod !== 'store_delivery') {
+            setShippingFee(null);
+            return;
+        }
+
+        const validItems = getBiteshipItems();
+        if (!destLat || !destLng || validItems.length === 0) {
+            setShippingFee(null);
+            return;
+        }
+
+        const fetchRates = async () => {
+            setShippingLoading(true);
+            try {
+                const payload = {
+                    origin_area_id: ORIGIN_AREA_ID,
+                    destination_latitude: destLat,
+                    destination_longitude: destLng,
+                    couriers: 'grab',
+                    items: validItems,
+                };
+
+                const res = await fetch(`${API_URL}/api/biteship/rates`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                const json = await res.json();
+                if (json.status === 'ok' && Array.isArray(json.data)) {
+                    // Find the "instant" courier option
+                    const instantRate = json.data.find((r: any) => r.type === 'instant');
+                    if (instantRate) {
+                        setShippingFee(instantRate.price);
+                    } else {
+                        setShippingFee(null);
+                        console.warn('No instant rate found in Biteship data', json.data);
+                    }
+                } else {
+                    setShippingFee(null);
+                    console.error('Biteship rates error:', json);
+                }
+            } catch (err) {
+                console.error('Failed to fetch shipping rates:', err);
+                setShippingFee(null);
+            } finally {
+                setShippingLoading(false);
+            }
+        };
+
+        // Add a slight debounce to avoid slamming the API repeatedly while users change qty
+        const timeoutId = setTimeout(() => {
+            fetchRates();
+        }, 800);
+
+        return () => clearTimeout(timeoutId);
+    }, [deliveryMethod, destLat, destLng, getBiteshipItems]);
 
     const filterPassedDates = (time: Date) => {
         const y = time.getFullYear(), m = String(time.getMonth() + 1).padStart(2, '0'), d = String(time.getDate()).padStart(2, '0');
@@ -542,51 +621,6 @@ export default function AdminOrderPage() {
                                     </p>
                                 )}
 
-                                {/* Postal Code + Biteship Area */}
-                                {destLat && (
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-[10px] font-black uppercase text-primary/60">Area Biteship</label>
-                                            {postalCode && (
-                                                <span className="text-[10px] font-bold text-primary/40">Kode Pos: {postalCode}</span>
-                                            )}
-                                        </div>
-
-                                        {areaLoading && (
-                                            <div className="flex items-center gap-2 py-2 text-xs text-primary/50 font-medium">
-                                                <LuRefreshCw size={12} className="animate-spin" /> Mencari area...
-                                            </div>
-                                        )}
-
-                                        {!areaLoading && areaResults.length > 0 && !selectedArea && (
-                                            <div className="space-y-1 max-h-40 overflow-y-auto bg-primary/5 rounded-xl p-1.5">
-                                                {areaResults.map((area: any) => (
-                                                    <button key={area.id} onClick={() => setSelectedArea(area)}
-                                                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-white text-xs font-medium text-primary transition-colors">
-                                                        <span className="font-bold block">{area.name}</span>
-                                                        <span className="text-primary/40">{area.id}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {selectedArea && (
-                                            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5">
-                                                <div>
-                                                    <p className="text-xs font-bold text-blue-700">{selectedArea.name}</p>
-                                                    <p className="text-[10px] text-blue-400 font-mono">{selectedArea.id}</p>
-                                                </div>
-                                                <button onClick={() => { setSelectedArea(null); setAreaResults([]); }}
-                                                    className="text-blue-300 hover:text-red-400 transition-colors ml-2"><LuTrash2 size={13} /></button>
-                                            </div>
-                                        )}
-
-                                        {!areaLoading && !postalCode && areaResults.length === 0 && (
-                                            <p className="text-[10px] text-primary/40 font-medium">Kode pos tidak ditemukan dari titik ini</p>
-                                        )}
-                                    </div>
-                                )}
-
                                 {/* Delivery Address — auto-filled from pin */}
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black uppercase text-primary/60">Alamat Lengkap Pengiriman *</label>
@@ -610,11 +644,35 @@ export default function AdminOrderPage() {
 
                     {/* Total Estimasi */}
                     {menus.length > 0 && (
-                        <div className="flex justify-between items-end pt-2">
-                            <div><span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Estimasi Total</span></div>
-                            <span className="text-xl font-extrabold text-primary">
-                                Rp {form.pesanan.reduce((sum, item) => sum + (menus.find(m => m.name === item.box_type)?.price || 0) * item.qty, 0).toLocaleString('id-ID')}
-                            </span>
+                        <div className="pt-2">
+                            {deliveryMethod === 'store_delivery' && (destLat && destLng) && (
+                                <div className="flex flex-col gap-1.5 mb-3 border-b border-primary/10 pb-3">
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Estimasi Pesanan</span>
+                                        <span className="text-sm font-bold text-primary">
+                                            Rp {form.pesanan.reduce((sum, item) => sum + (menus.find(m => m.name === item.box_type)?.price || 0) * item.qty, 0).toLocaleString('id-ID')}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-end">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Ongkir (Grab Instant)</span>
+                                            {shippingLoading && <LuRefreshCw size={10} className="animate-spin text-primary/40" />}
+                                        </div>
+                                        <span className="text-sm font-bold text-primary">
+                                            {shippingFee ? `Rp ${shippingFee.toLocaleString('id-ID')}` : '-'}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                            <div className="flex justify-between items-end">
+                                <div><span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Estimasi Total</span></div>
+                                <span className="text-xl font-extrabold text-primary">
+                                    Rp {(
+                                        form.pesanan.reduce((sum, item) => sum + (menus.find(m => m.name === item.box_type)?.price || 0) * item.qty, 0) +
+                                        (shippingFee || 0)
+                                    ).toLocaleString('id-ID')}
+                                </span>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -662,10 +720,21 @@ export default function AdminOrderPage() {
                                     );
                                 })}
                                 {menus.length > 0 && (
-                                    <div className="flex justify-between pt-3 border-t border-primary/10 mt-2">
-                                        <span className="font-black text-primary">Total</span>
-                                        <span className="font-black text-primary text-lg">Rp {form.pesanan.reduce((sum, item) => sum + (menus.find(m => m.name === item.box_type)?.price || 0) * item.qty, 0).toLocaleString('id-ID')}</span>
-                                    </div>
+                                    <>
+                                        {deliveryMethod === 'store_delivery' && shippingFee !== null && (
+                                            <div className="flex justify-between items-start gap-3 py-1 mt-1 text-primary/80">
+                                                <div className="text-xs">Ongkir (Grab Instant)</div>
+                                                <div className="font-bold whitespace-nowrap">Rp {shippingFee.toLocaleString('id-ID')}</div>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between pt-3 border-t border-primary/10 mt-2">
+                                            <span className="font-black text-primary">Total Pembayaran</span>
+                                            <span className="font-black text-primary text-lg">Rp {(
+                                                form.pesanan.reduce((sum, item) => sum + (menus.find(m => m.name === item.box_type)?.price || 0) * item.qty, 0) +
+                                                (shippingFee || 0)
+                                            ).toLocaleString('id-ID')}</span>
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         </div>
