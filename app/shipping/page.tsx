@@ -56,6 +56,7 @@ export default function ShippingPage() {
     // Items
     const [qty, setQty] = useState(1);
     const [boxType, setBoxType] = useState<'FULL' | 'HALF'>('FULL');
+    const [selectedDeliveryType, setSelectedDeliveryType] = useState<'instant' | 'same_day'>('instant');
 
     // Rates
     const [rates, setRates] = useState<Rate[]>([]);
@@ -125,7 +126,7 @@ export default function ShippingPage() {
                 body: JSON.stringify({
                     origin_area_id: ORIGIN_AREA_ID,
                     destination_area_id: selectedArea.id,
-                    couriers: 'gosend,grab_express,jne,sicepat,jnt,anteraja',
+                    couriers: 'gosend,grab,gojek,lalamove,borzo,paxel,jne,sicepat,jnt,anteraja',
                     items: getItems(),
                 }),
             });
@@ -335,34 +336,57 @@ export default function ShippingPage() {
 
                 {/* ── STEP: RATES ── */}
                 {step === 'rates' && (
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                            <p className="text-sm font-black text-primary">{rates.length} opsi pengiriman</p>
+                            <p className="text-sm font-black text-primary">Pilih Layanan</p>
                             <button onClick={() => setStep('area')} className="text-xs font-bold text-primary/50 hover:text-primary">← Kembali</button>
                         </div>
 
-                        {rates.length === 0 && (
+                        {/* Delivery Type Radio Toggle */}
+                        <div className="flex gap-2 p-1 bg-white rounded-2xl border border-primary/10 shadow-sm">
+                            {(['instant', 'same_day'] as const).map(type => (
+                                <button key={type} onClick={() => { setSelectedDeliveryType(type); setSelectedRate(null); }}
+                                    className={`flex-1 py-3 px-2 rounded-xl text-xs font-black transition-all ${selectedDeliveryType === type ? 'bg-primary text-brand-yellow shadow-md' : 'text-primary/50 hover:bg-primary/5'}`}>
+                                    {type === 'instant' ? 'Instant (±3 Jam)' : 'Same Day (±8 Jam)'}
+                                </button>
+                            ))}
+                        </div>
+
+                        {rates.filter(r => {
+                            // Biteship uses various codes for same_day (e.g. sameday, same_day) so we sanitize
+                            const svc = (r.courier_service_code || '').toLowerCase().replace(/_/g, '');
+                            if (selectedDeliveryType === 'instant') return svc.includes('instant');
+                            if (selectedDeliveryType === 'same_day') return svc.includes('sameday') || svc.includes('same');
+                            return true;
+                        }).length === 0 ? (
                             <div className="text-center py-10 bg-white rounded-2xl">
                                 <LuPackage className="mx-auto text-3xl text-primary/20 mb-2" />
-                                <p className="text-sm text-primary/40">Tidak ada tarif tersedia</p>
+                                <p className="text-sm text-primary/40">Tarif {selectedDeliveryType === 'instant' ? 'Instant' : 'Same Day'} tidak tersedia untuk area ini</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {rates.filter(r => {
+                                    const svc = (r.courier_service_code || '').toLowerCase().replace(/_/g, '');
+                                    if (selectedDeliveryType === 'instant') return svc.includes('instant');
+                                    if (selectedDeliveryType === 'same_day') return svc.includes('sameday') || svc.includes('same');
+                                    return true;
+                                }).map((rate, i) => (
+                                    <button key={i} onClick={() => { setSelectedRate(rate); setStep('form'); }}
+                                        className="w-full bg-white rounded-2xl p-4 shadow-sm border-2 border-transparent hover:border-primary/30 active:scale-[0.98] transition-all text-left space-y-1">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-bold text-primary">{rate.courier_name}</p>
+                                                <p className="text-xs text-primary/50">{rate.courier_service_name}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-base font-black text-primary">Rp {rate.price.toLocaleString('id-ID')}</p>
+                                                <p className="text-[10px] text-primary/40">{rate.min_day}–{rate.max_day} hari</p>
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
                             </div>
                         )}
-
-                        {rates.map((rate, i) => (
-                            <button key={i} onClick={() => { setSelectedRate(rate); setStep('form'); }}
-                                className="w-full bg-white rounded-2xl p-4 shadow-sm border-2 border-transparent hover:border-primary/30 transition-all text-left space-y-1">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-sm font-bold text-primary">{rate.courier_name}</p>
-                                        <p className="text-xs text-primary/50">{rate.courier_service_name}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-base font-black text-primary">Rp {rate.price.toLocaleString('id-ID')}</p>
-                                        <p className="text-[10px] text-primary/40">{rate.min_day}–{rate.max_day} hari</p>
-                                    </div>
-                                </div>
-                            </button>
-                        ))}
                     </div>
                 )}
 

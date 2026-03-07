@@ -15,6 +15,7 @@ import {
     LuStore,
     LuMapPin,
     LuRefreshCw,
+    LuInfo,
 } from 'react-icons/lu';
 import { MdClose } from 'react-icons/md';
 import DatePicker from 'react-datepicker';
@@ -73,6 +74,8 @@ export default function OrderPage() {
 
     const [shippingFee, setShippingFee] = useState<number | null>(null);
     const [shippingLoading, setShippingLoading] = useState(false);
+    const [availableRates, setAvailableRates] = useState<any[]>([]);
+    const [selectedShippingType, setSelectedShippingType] = useState<'instant' | 'same_day'>('instant');
 
     const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
         setToast({ title, body, type });
@@ -103,9 +106,11 @@ export default function OrderPage() {
     const [menus, setMenus] = useState<any[]>([]);
     const [variants, setVariants] = useState<any[]>([]);
     const [quotas, setQuotas] = useState<any[]>([]);
+    const [quotasLoading, setQuotasLoading] = useState(true);
     const [availableHours, setAvailableHours] = useState<any[]>([]);
 
     useEffect(() => {
+        setQuotasLoading(true);
         Promise.all([
             fetch(`${API_URL}/api/menu`).then(r => r.json()),
             fetch(`${API_URL}/api/variants`).then(r => r.json()),
@@ -114,16 +119,15 @@ export default function OrderPage() {
             if (mjson.status === 'ok') setMenus(mjson.data);
             if (vjson.status === 'ok') setVariants(vjson.data);
             if (qjson.status === 'ok') setQuotas(qjson.data);
-        }).catch(console.error);
+        }).catch(console.error).finally(() => setQuotasLoading(false));
     }, []);
 
-    // Hourly quota check disabled — all active hours are treated as available
-    // useEffect(() => {
-    //     if (!form.pickup_date) { setAvailableHours([]); return; }
-    //     fetch(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
-    //         .then(r => r.json()).then(json => { if (json.status === 'ok') setAvailableHours(json.data); })
-    //         .catch(console.error);
-    // }, [form.pickup_date]);
+    useEffect(() => {
+        if (!form.pickup_date) { setAvailableHours([]); return; }
+        fetch(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
+            .then(r => r.json()).then(json => { if (json.status === 'ok') setAvailableHours(json.data); })
+            .catch(console.error);
+    }, [form.pickup_date]);
 
     // Reverse geocode when pin dropped — fills address, extracts postal_code, auto-searches Biteship area
     const onMapClick = useCallback(async (lat: number, lng: number) => {
@@ -197,10 +201,10 @@ export default function OrderPage() {
             setShippingLoading(true);
             try {
                 const payload = {
-                    origin_area_id: ORIGIN_AREA_ID,
+                    origin_longitude: 106.854106, // RPN store
                     destination_latitude: destLat,
                     destination_longitude: destLng,
-                    couriers: 'grab',
+                    couriers: 'gosend,grab,gojek,lalamove,paxel,borzo,sicepat,anteraja', // Request multiple couriers for instantaneous and same-day coverage
                     items: validItems,
                 };
 
@@ -212,44 +216,72 @@ export default function OrderPage() {
 
                 const json = await res.json();
                 if (json.status === 'ok' && Array.isArray(json.data)) {
-                    // Find the "instant" courier option
-                    const instantRate = json.data.find((r: any) => r.type === 'instant');
-                    if (instantRate) {
-                        setShippingFee(instantRate.price);
-                    } else {
-                        setShippingFee(null);
-                        console.warn('No instant rate found in Biteship data', json.data);
-                    }
+                    setAvailableRates(json.data);
                 } else {
-                    setShippingFee(null);
+                    setAvailableRates([]);
                     console.error('Biteship rates error:', json);
                 }
             } catch (err) {
                 console.error('Failed to fetch shipping rates:', err);
-                setShippingFee(null);
+                setAvailableRates([]);
             } finally {
                 setShippingLoading(false);
             }
         };
 
-        // Add a slight debounce to avoid slamming the API repeatedly while users change qty
-        const timeoutId = setTimeout(() => {
-            fetchRates();
-        }, 800);
-
+        const timeoutId = setTimeout(() => fetchRates(), 800);
         return () => clearTimeout(timeoutId);
     }, [deliveryMethod, destLat, destLng, getBiteshipItems]);
 
+    // Update shipping fee dynamically whenever selectedShippingType or availableRates change
+    useEffect(() => {
+        if (!availableRates.length) {
+            setShippingFee(null);
+            return;
+        }
+
+        const validRates = availableRates.filter(r => {
+            const svc = (r.courier_service_code || '').toLowerCase().replace(/_/g, '');
+            if (selectedShippingType === 'instant') return svc.includes('instant');
+            if (selectedShippingType === 'same_day') return svc.includes('sameday') || svc.includes('same');
+            return false;
+        });
+
+        if (validRates.length > 0) {
+            // Find lowest price
+            const cheapest = validRates.sort((a, b) => a.price - b.price)[0];
+            setShippingFee(cheapest.price);
+        } else {
+            setShippingFee(null);
+        }
+    }, [availableRates, selectedShippingType]);
+
     const filterPassedDates = (time: Date) => {
+        // Disable past dates automatically
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (time < today) return false;
+
         const y = time.getFullYear(), m = String(time.getMonth() + 1).padStart(2, '0'), d = String(time.getDate()).padStart(2, '0');
-        // If quotas haven't loaded yet, allow all dates (graceful fallback)
-        if (quotas.length === 0) return true;
+        if (quotasLoading) return true; // allow while loading
+        if (quotas.length === 0) return false; // gracefully disable all if truly empty
         const q = quotas.find(q => q.date === `${y}-${m}-${d}`);
         return q ? (q.remaining_qty > 0 || (q.remaining_hampers_qty || 0) > 0) : false;
     };
 
-    // Hourly quota disabled: always return true so all hours are selectable
-    const getIsHourAvailable = (_hStr: string) => true;
+    const getIsHourAvailable = (hStr: string) => {
+        if (!form.pickup_date) return false;
+        const hq = availableHours.find(h => h.time_str === hStr && h.is_active);
+        if (!hq) return false;
+        let requestedBox = 0, requestedHampers = 0;
+        form.pesanan.forEach(item => {
+            if (!item.name) return;
+            if (item.box_type === 'HALF') requestedBox += item.qty * 0.5;
+            else if (item.box_type === 'FULL') requestedBox += item.qty;
+            else if (item.box_type === 'HAMPERS') requestedHampers += item.qty;
+        });
+        return hq.remaining_qty >= requestedBox && hq.remaining_hampers_qty >= requestedHampers;
+    };
 
     const handleReviewOrder = () => {
         setErrorMessage('');
@@ -288,7 +320,7 @@ export default function OrderPage() {
                 delivery_lng: destLng,
                 delivery_address: deliveryAddress.trim() || null,
                 delivery_driver_note: driverNote.trim() || null,
-                delivery_area_id: selectedArea?.id || null,
+                delivery_type_preference: selectedShippingType, // Add preference so the backend/admins know what they requested
             };
 
             const res = await fetch(`${API_URL}/api/order`, {
@@ -400,12 +432,12 @@ export default function OrderPage() {
                         <div className="flex-1 space-y-1.5 flex flex-col">
                             <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pickup *</label>
                             <div className="flex-1 min-h-[44px]">
-                                <DatePicker selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null} onChange={(date: Date | null) => { if (date) { const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); setForm(f => ({ ...f, pickup_date: local.toISOString().split('T')[0] })); } }} filterDate={filterPassedDates} dateFormat="dd/MM/yyyy" className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholderText="Pilih Tanggal" />
+                                <DatePicker selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null} onChange={(date: Date | null) => { if (date) { const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); setForm(f => ({ ...f, pickup_date: local.toISOString().split('T')[0] })); } }} filterDate={filterPassedDates} dateFormat="dd/MM/yyyy" className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholderText="Pilih Tanggal" disabled={!quotasLoading && quotas.length === 0} />
                             </div>
                         </div>
                         <div className="w-36 space-y-1.5 relative">
                             <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu *</label>
-                            <button type="button" onClick={() => setShowTimePicker(!showTimePicker)} className="w-full h-11 px-4 flex items-center justify-center gap-1 rounded-xl border-2 border-primary/10 bg-primary/5 hover:bg-primary/10 transition-colors text-primary text-sm font-extrabold focus:outline-none focus:border-primary/30">
+                            <button type="button" disabled={!quotasLoading && quotas.length === 0} onClick={() => setShowTimePicker(!showTimePicker)} className="w-full h-11 px-4 flex items-center justify-center gap-1 rounded-xl border-2 border-primary/10 bg-primary/5 disabled:opacity-50 hover:bg-primary/10 transition-colors text-primary text-sm font-extrabold focus:outline-none focus:border-primary/30">
                                 <span>{form.pickup_time.split(':')[0] || '--'}</span>
                                 <span className="opacity-50">:</span>
                                 <span>{form.pickup_time.split(':')[1] || '--'}</span>
@@ -421,7 +453,8 @@ export default function OrderPage() {
                                                 {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
                                                     const hDisplay = String(hNum).padStart(2, '0');
                                                     const isSelected = form.pickup_time.split(':')[0] === hDisplay;
-                                                    const isAvail = getIsHourAvailable(hDisplay + ':00');
+                                                    let isAvail = getIsHourAvailable(hDisplay + ':00');
+                                                    if (deliveryMethod === 'store_delivery' && selectedShippingType === 'same_day' && hNum > 12) isAvail = false;
                                                     return (
                                                         <button key={hDisplay} type="button" disabled={!isAvail} onClick={() => { const mm = form.pickup_time.split(':')[1] || '00'; setForm(f => ({ ...f, pickup_time: `${hDisplay}:${mm}` })); }}
                                                             className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail ? 'opacity-30 cursor-not-allowed' : isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>
@@ -436,7 +469,15 @@ export default function OrderPage() {
                                             <div className="p-1.5 space-y-0.5">
                                                 {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => {
                                                     const isSelected = form.pickup_time.split(':')[1] === m;
-                                                    return <button key={m} type="button" onClick={() => { const hh = form.pickup_time.split(':')[0] || '11'; setForm(f => ({ ...f, pickup_time: `${hh}:${m}` })); }} className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>{m}</button>;
+                                                    const hDisplay = form.pickup_time.split(':')[0] || '11';
+                                                    let isAvail = true;
+                                                    if (deliveryMethod === 'store_delivery' && selectedShippingType === 'same_day' && hDisplay === '12' && m !== '00') isAvail = false;
+                                                    return (
+                                                        <button key={m} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: `${hDisplay}:${m}` })); }}
+                                                            className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail ? 'opacity-30 cursor-not-allowed' : isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>
+                                                            {m}
+                                                        </button>
+                                                    );
                                                 })}
                                             </div>
                                         </div>
@@ -445,6 +486,13 @@ export default function OrderPage() {
                             )}
                         </div>
                     </div>
+
+                    {!quotasLoading && quotas.length === 0 && (
+                        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 animate-in fade-in zoom-in-95">
+                            <LuInfo className="text-red-600 mt-0.5 shrink-0" size={16} />
+                            <p className="text-xs font-bold text-red-700 leading-tight">Mohon maaf, kuota pemesanan saat ini sedang penuh atau tutup. Silahkan coba lagi nanti.</p>
+                        </div>
+                    )}
 
                     {/* Pesanan */}
                     <div className="space-y-3">
@@ -628,6 +676,35 @@ export default function OrderPage() {
                                         placeholder="Contoh: Jangan dikocok, paket mudah pecah..."
                                         className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" />
                                 </div>
+
+                                {/* Pilihan Layanan Pengiriman */}
+                                <div className="space-y-1.5 pt-2">
+                                    <label className="text-[10px] font-black uppercase text-primary/60">Layanan Pengiriman</label>
+                                    <div className="flex gap-2 p-1 bg-white rounded-2xl border border-primary/10 shadow-sm">
+                                        {(['instant', 'same_day'] as const).map(type => (
+                                            <button key={type} onClick={() => {
+                                                setSelectedShippingType(type);
+                                                // Reset time if it's invalid for same_day
+                                                if (type === 'same_day') {
+                                                    const [hh, mm] = form.pickup_time.split(':');
+                                                    if (parseInt(hh) > 12 || (parseInt(hh) === 12 && parseInt(mm) > 0)) {
+                                                        setForm(f => ({ ...f, pickup_time: '12:00' }));
+                                                    }
+                                                }
+                                            }}
+                                                className={`flex-1 flex flex-col items-center justify-center py-2 px-1 text-center rounded-xl transition-all ${selectedShippingType === type ? 'bg-primary text-brand-yellow shadow-md border border-primary text-opacity-100' : 'text-primary/50 hover:bg-primary/5 border border-transparent'}`}>
+                                                <span className="text-xs font-black">{type === 'instant' ? 'Instant' : 'Same Day'}</span>
+                                                <span className="text-[10px] font-medium opacity-80">{type === 'instant' ? '±3 Jam' : '±8 Jam (Lebih Murah)'}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {selectedShippingType === 'same_day' && (
+                                        <div className="mt-2 p-2 bg-brand-yellow/20 border border-brand-yellow rounded-xl flex items-start gap-2 animate-in fade-in zoom-in-95">
+                                            <LuInfo className="text-primary mt-0.5 shrink-0" size={14} />
+                                            <p className="text-[10px] font-bold text-primary leading-tight">Pengiriman Same Day maksimal pickup jam <strong>12:00</strong>. Waktu pickup otomatis disesuaikan.</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -647,7 +724,7 @@ export default function OrderPage() {
                                     </div>
                                     <div className="flex justify-between items-end">
                                         <div className="flex items-center gap-1.5">
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Ongkir (Grab Instant)</span>
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Ongkir ({selectedShippingType === 'instant' ? 'Instant' : 'Same Day'})</span>
                                             {shippingLoading && <LuRefreshCw size={10} className="animate-spin text-primary/40" />}
                                         </div>
                                         <span className="text-sm font-bold text-primary">
@@ -711,10 +788,10 @@ export default function OrderPage() {
                                 })}
                                 {menus.length > 0 && (
                                     <>
-                                        {deliveryMethod === 'store_delivery' && shippingFee !== null && (
+                                        {deliveryMethod === 'store_delivery' && (shippingFee !== null || shippingLoading) && (
                                             <div className="flex justify-between items-start gap-3 py-1 mt-1 text-primary/80">
-                                                <div className="text-xs">Ongkir (Grab Instant)</div>
-                                                <div className="font-bold whitespace-nowrap">Rp {shippingFee.toLocaleString('id-ID')}</div>
+                                                <div className="text-xs">Ongkir ({selectedShippingType === 'instant' ? 'Instant' : 'Same Day'})</div>
+                                                <div className="font-bold whitespace-nowrap">{shippingFee !== null ? `Rp ${shippingFee.toLocaleString('id-ID')}` : 'Memuat...'}</div>
                                             </div>
                                         )}
                                         <div className="flex justify-between pt-3 border-t border-primary/10 mt-2">
