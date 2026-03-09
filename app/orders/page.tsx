@@ -1189,7 +1189,8 @@ export default function OrdersPage() {
                                                                     const isKraftDisabled = item.box_type === 'HAMPERS' && (isKraftBomb || isKraftCarnation);
 
                                                                     const isChecked = selectedFlavors.includes(vName);
-                                                                    const isDisabled = isKraftDisabled || hasMix3Selected || (!isChecked && selectedFlavors.length >= maxFlavors);
+                                                                    // If a Mix 3 is selected, ALL regular variants should be enabled so they can be clicked to switch
+                                                                    const isDisabled = isKraftDisabled || (!hasMix3Selected && !isChecked && selectedFlavors.length >= maxFlavors);
 
                                                                     return (
                                                                         <label key={v.id} className={`relative flex items-center gap-2 p-2 rounded-lg border-2 transition-all cursor-pointer ${isChecked ? 'border-primary bg-primary/5 text-primary' : isDisabled ? 'border-primary/5 bg-primary/5 text-primary/30 opacity-50 cursor-not-allowed' : 'border-primary/10 bg-white text-primary/70 hover:border-primary/30'}`}>
