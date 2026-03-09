@@ -1161,74 +1161,93 @@ export default function OrdersPage() {
                                                     Pilih Rasa (Max {item.box_type === 'HAMPERS' ? 3 : item.box_type === 'FULL' ? 2 : 1} Varian)
                                                 </label>
                                                 <div className="grid grid-cols-2 lg:grid-cols-2 gap-2">
-                                                    {variants
-                                                        .filter(v => v.is_active)
-                                                        .map(v => {
-                                                            const maxFlavors = item.box_type === 'HAMPERS' ? 3 : item.box_type === 'FULL' ? 2 : 1;
-                                                            let selectedFlavors: string[] = [];
-                                                            if (item.name) {
-                                                                if (item.name.startsWith('Mix ')) {
-                                                                    selectedFlavors = item.name.replace('Mix ', '').split(' Dan ');
-                                                                } else {
-                                                                    selectedFlavors = [item.name];
-                                                                }
+                                                    {(() => {
+                                                        const activeVariants = variants.filter(v => v.is_active);
+                                                        const regularVariants = activeVariants.filter(v => !(v.name || v.variant_name || '').toLowerCase().startsWith('mix 3'));
+                                                        const mix3Variants = activeVariants.filter(v => (v.name || v.variant_name || '').toLowerCase().startsWith('mix 3'));
+
+                                                        let selectedFlavors: string[] = [];
+                                                        if (item.name) {
+                                                            if (item.name.startsWith('Mix ') && !item.name.toLowerCase().startsWith('mix 3')) {
+                                                                selectedFlavors = item.name.replace('Mix ', '').split(' Dan ');
+                                                            } else {
+                                                                selectedFlavors = [item.name];
                                                             }
+                                                        }
 
-                                                            const vName = (v.name || v.variant_name || '').toLowerCase();
-                                                            const isKraftBomb = vName.includes('kraf') && vName.includes('bomb');
-                                                            const isKraftCarnation = vName.includes('kraf') && vName.includes('carnation');
-                                                            const isKraftDisabled = item.box_type === 'HAMPERS' && (isKraftBomb || isKraftCarnation);
+                                                        const hasMix3Selected = selectedFlavors.some(f => f.toLowerCase().startsWith('mix 3'));
+                                                        const maxFlavors = item.box_type === 'HAMPERS' ? 3 : item.box_type === 'FULL' ? 2 : 1;
 
-                                                            const isChecked = selectedFlavors.includes(v.variant_name);
-                                                            const isDisabled = isKraftDisabled || (!isChecked && selectedFlavors.length >= maxFlavors);
+                                                        return (
+                                                            <>
+                                                                {regularVariants.map(v => {
+                                                                    const vName = v.variant_name;
+                                                                    // Kraft logic
+                                                                    const vNameLower = (v.name || v.variant_name || '').toLowerCase();
+                                                                    const isKraftBomb = vNameLower.includes('kraf') && vNameLower.includes('bomb');
+                                                                    const isKraftCarnation = vNameLower.includes('kraf') && vNameLower.includes('carnation');
+                                                                    const isKraftDisabled = item.box_type === 'HAMPERS' && (isKraftBomb || isKraftCarnation);
 
-                                                            return (
-                                                                <label
-                                                                    key={v.id}
-                                                                    className={`relative flex items-center gap-2 p-2 rounded-lg border-2 transition-all cursor-pointer ${isChecked
-                                                                        ? 'border-primary bg-primary/5 text-primary'
-                                                                        : isDisabled
-                                                                            ? 'border-primary/5 bg-primary/5 text-primary/30 opacity-50 cursor-not-allowed'
-                                                                            : 'border-primary/10 bg-white text-primary/70 hover:border-primary/30'
-                                                                        }`}
-                                                                >
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        className="peer sr-only"
-                                                                        checked={isChecked}
-                                                                        disabled={isDisabled}
-                                                                        onChange={(e) => {
-                                                                            let newFlavors = [...selectedFlavors];
-                                                                            if (e.target.checked) {
-                                                                                if (newFlavors.length < maxFlavors) newFlavors.push(v.variant_name);
-                                                                            } else {
-                                                                                newFlavors = newFlavors.filter(f => f !== v.variant_name);
-                                                                            }
+                                                                    const isChecked = selectedFlavors.includes(vName);
+                                                                    const isDisabled = isKraftDisabled || hasMix3Selected || (!isChecked && selectedFlavors.length >= maxFlavors);
 
-                                                                            let newName = '';
-                                                                            if (newFlavors.length > 0) {
-                                                                                if (newFlavors.length > 1) {
-                                                                                    const sorted = [...newFlavors].sort();
-                                                                                    newName = `Mix ${sorted.join(' Dan ')}`;
+                                                                    return (
+                                                                        <label key={v.id} className={`relative flex items-center gap-2 p-2 rounded-lg border-2 transition-all cursor-pointer ${isChecked ? 'border-primary bg-primary/5 text-primary' : isDisabled ? 'border-primary/5 bg-primary/5 text-primary/30 opacity-50 cursor-not-allowed' : 'border-primary/10 bg-white text-primary/70 hover:border-primary/30'}`}>
+                                                                            <input type="checkbox" className="peer sr-only" checked={isChecked} disabled={isDisabled} onChange={e => {
+                                                                                let newFlavors = [...selectedFlavors];
+                                                                                if (hasMix3Selected) newFlavors = []; // Clear Mix 3 if selecting regular
+
+                                                                                if (e.target.checked) {
+                                                                                    if (newFlavors.length < maxFlavors) newFlavors.push(vName);
                                                                                 } else {
-                                                                                    newName = newFlavors[0];
+                                                                                    newFlavors = newFlavors.filter(f => f !== vName);
                                                                                 }
-                                                                            }
 
-                                                                            setForm(f => ({
-                                                                                ...f,
-                                                                                pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: newName } : p)
-                                                                            }));
-                                                                        }}
-                                                                    />
-                                                                    <div className={`w-4 h-4 rounded flex items-center justify-center border-2 transition-colors shrink-0 flex-none ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20 peer-focus-visible:border-primary/50'
-                                                                        }`}>
-                                                                        {isChecked && <LuCheck className="text-[10px] stroke-[4]" />}
+                                                                                let newName = '';
+                                                                                if (newFlavors.length > 0) {
+                                                                                    newName = newFlavors.length > 1 ? `Mix ${[...newFlavors].sort().join(' Dan ')}` : newFlavors[0];
+                                                                                }
+                                                                                setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: newName } : p) }));
+                                                                            }} />
+                                                                            <div className={`w-4 h-4 rounded flex items-center justify-center border-2 transition-colors shrink-0 flex-none ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20 peer-focus-visible:border-primary/50'}`}>
+                                                                                {isChecked && <LuCheck className="text-[10px] stroke-[4]" />}
+                                                                            </div>
+                                                                            <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">{vName}</span>
+                                                                        </label>
+                                                                    );
+                                                                })}
+
+                                                                {item.box_type === 'FULL' && mix3Variants.length > 0 && (
+                                                                    <div className="col-span-2 mt-2 pt-2 border-t border-primary/10">
+                                                                        <div className="text-[10px] font-black uppercase tracking-widest text-primary/40 mb-2">Atau Pilih Paket Mix 3 (1 Centang untuk 1 Full Box)</div>
+                                                                        <div className="grid grid-cols-1 gap-2">
+                                                                            {mix3Variants.map(v => {
+                                                                                const vName = v.variant_name;
+                                                                                const isChecked = selectedFlavors.includes(vName);
+                                                                                // Disable if any other Mix 3 is chosen, or if ANY regular flavor is chosen
+                                                                                const hasRegularSelected = selectedFlavors.length > 0 && !hasMix3Selected;
+                                                                                const isDisabled = (!isChecked && hasMix3Selected) || hasRegularSelected;
+
+                                                                                return (
+                                                                                    <label key={v.id} className={`relative flex items-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isChecked ? 'border-primary bg-primary/5 text-primary' : isDisabled ? 'border-primary/5 bg-primary/5 text-primary/30 opacity-50 cursor-not-allowed' : 'border-primary/10 bg-white text-primary/70 hover:border-primary/30 hover:bg-primary/5'}`}>
+                                                                                        <input type="checkbox" className="peer sr-only" checked={isChecked} disabled={isDisabled} onChange={e => {
+                                                                                            // Mix 3 mutually exclusive override
+                                                                                            const newName = e.target.checked ? vName : '';
+                                                                                            setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: newName } : p) }));
+                                                                                        }} />
+                                                                                        <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 transition-colors shrink-0 flex-none ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20 peer-focus-visible:border-primary/50'}`}>
+                                                                                            {isChecked && <div className="w-2.5 h-2.5 rounded-full bg-brand-yellow" />}
+                                                                                        </div>
+                                                                                        <span className="text-sm font-extrabold leading-tight select-none flex-1 break-words text-left">{vName}</span>
+                                                                                    </label>
+                                                                                );
+                                                                            })}
+                                                                        </div>
                                                                     </div>
-                                                                    <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">{v.variant_name}</span>
-                                                                </label>
-                                                            );
-                                                        })}
+                                                                )}
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </div>
                                                 {!item.name && (
                                                     <p className="text-[10px] text-red-500 font-bold mt-2">* Silahkan pilih minimal 1 rasa</p>
