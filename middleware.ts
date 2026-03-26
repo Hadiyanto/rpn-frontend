@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
 
     const { pathname } = request.nextUrl;
-    const isPublic = pathname === '/' || pathname.startsWith('/pesan') || pathname.startsWith('/bukti-transfer');
+    const isPublic = pathname === '/' || pathname.startsWith('/pesan') || pathname.startsWith('/bukti-transfer') || pathname.startsWith('/demo');
 
     // Sudah login + akses halaman login → ke /orders
     if (user && pathname === '/') {
