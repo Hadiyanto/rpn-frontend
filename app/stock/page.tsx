@@ -6,10 +6,14 @@ import { LuMenu, LuPlus, LuHistory, LuPackage } from 'react-icons/lu';
 import { MdClose } from 'react-icons/md';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/useToast';
+import Toast from '@/components/Toast';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 export default function StockPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('stock');
     const router = useRouter();
 
     const [stocks, setStocks] = useState<any[]>([]);
@@ -21,25 +25,18 @@ export default function StockPage() {
     const [isIncrement, setIsIncrement] = useState(false); // Default: OUT
     const [notes, setNotes] = useState('');
 
-    const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
-
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
-    const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
-        setToast({ title, body, type });
-        setTimeout(() => setToast(null), 3000);
-    };
+    const { toast, showToast, hideToast } = useToast();
 
     const fetchStocks = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiUrl}/api/stocks`);
-            const json = await res.json();
+            const json = await fetchJson(`${API_URL}/api/stocks`);
             if (json.status === 'ok') {
                 setStocks(json.data);
             }
         } catch (e) {
             console.error(e);
+            showToast('❌ Error', 'Gagal memuat data stok', 'error');
         } finally {
             setLoading(false);
         }
@@ -76,7 +73,7 @@ export default function StockPage() {
 
     const executeAdjustment = async (stock_id: number, qty_change: number, type: string, n: string, is_target: boolean = false) => {
         try {
-            const res = await fetch(`${apiUrl}/api/stocks/adjust`, {
+            const json = await fetchJson(`${API_URL}/api/stocks/adjust`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -87,7 +84,6 @@ export default function StockPage() {
                     notes: n
                 }),
             });
-            const json = await res.json();
             if (json.status === 'ok') {
                 showToast('✅ Berhasil', 'Stok berhasil diperbarui', 'success');
                 setIsModalOpen(false);
@@ -112,7 +108,7 @@ export default function StockPage() {
     };
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen">
+        <div className="bg-brand-white font-display text-primary min-h-screen">
             <Sidebar
                 open={isSidebarOpen}
                 onClose={() => setSidebarOpen(false)}
@@ -281,20 +277,7 @@ export default function StockPage() {
                 </div>
             )}
 
-            {/* Toast */}
-            {toast && (
-                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
-                    <div className={`shadow-xl rounded-2xl p-4 flex items-start gap-3 w-80 max-w-[90vw] ${toast.type === 'success' ? 'bg-green-500 text-white' : toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-primary text-brand-yellow'}`}>
-                        <div className="flex-1">
-                            <h4 className="font-bold text-sm mb-0.5">{toast.title}</h4>
-                            <p className="text-xs opacity-90">{toast.body}</p>
-                        </div>
-                        <button onClick={() => setToast(null)} className="p-1 hover:bg-black/10 rounded-lg transition-colors">
-                            <MdClose className="text-lg" />
-                        </button>
-                    </div>
-                </div>
-            )}
+            <Toast toast={toast} onClose={hideToast} />
         </div>
     );
 }

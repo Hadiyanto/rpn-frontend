@@ -20,12 +20,12 @@ import {
 import { MdClose } from 'react-icons/md';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL, ORIGIN_AREA_ID } from '@/utils/config';
+import type { Menu, Variant } from '@/types/menu';
 
 // Leaflet map loaded client-side only
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), { ssr: false });
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-const ORIGIN_AREA_ID = 'IDNP6IDNC148IDND841IDZ12750'; // Pancoran, Jakarta Selatan
 
 interface OrderItem {
     box_type: 'FULL' | 'HALF' | 'HAMPERS';
@@ -59,7 +59,7 @@ function normalizeVariant(name: string) {
 }
 
 const DELIVERY_OPTIONS: { key: DeliveryMethod; label: string; desc: string; icon: any; hidden?: boolean }[] = [
-    { key: 'pickup', label: 'Pick Up Sendiri', desc: 'Customer datang langsung ke toko', icon: LuStore },
+    { key: 'pickup', label: 'Pick Up Sendiri', desc: 'Pesanan diambil langsung di toko', icon: LuStore },
     { key: 'customer_delivery', label: 'Delivery Sendiri', desc: 'Customer atur kurir sendiri', icon: LuTruck },
     { key: 'store_delivery', label: 'Store Delivery', desc: 'Toko yang mengirim ke customer', icon: LuMapPin, hidden: true },
 ];
@@ -103,30 +103,38 @@ export default function OrderPage() {
     const [selectedArea, setSelectedArea] = useState<any>(null);
     const [areaLoading, setAreaLoading] = useState(false);
 
-    const [menus, setMenus] = useState<any[]>([]);
-    const [variants, setVariants] = useState<any[]>([]);
+    const [menus, setMenus] = useState<Menu[]>([]);
+    const [variants, setVariants] = useState<Variant[]>([]);
     const [quotas, setQuotas] = useState<any[]>([]);
     const [quotasLoading, setQuotasLoading] = useState(true);
     const [availableHours, setAvailableHours] = useState<any[]>([]);
 
     useEffect(() => {
+        let cancelled = false;
         setQuotasLoading(true);
         Promise.all([
-            fetch(`${API_URL}/api/menu`).then(r => r.json()),
-            fetch(`${API_URL}/api/variants`).then(r => r.json()),
-            fetch(`${API_URL}/api/daily-quota`).then(r => r.json()),
+            fetchJson(`${API_URL}/api/menu`),
+            fetchJson(`${API_URL}/api/variants`),
+            fetchJson(`${API_URL}/api/daily-quota`),
         ]).then(([mjson, vjson, qjson]) => {
+            if (cancelled) return;
             if (mjson.status === 'ok') setMenus(mjson.data);
             if (vjson.status === 'ok') setVariants(vjson.data);
             if (qjson.status === 'ok') setQuotas(qjson.data);
-        }).catch(console.error).finally(() => setQuotasLoading(false));
+        }).catch(err => {
+            console.error(err);
+            if (!cancelled) showToast('❌ Error', 'Gagal memuat menu. Silakan refresh halaman.', 'error');
+        }).finally(() => { if (!cancelled) setQuotasLoading(false); });
+        return () => { cancelled = true; };
     }, []);
 
     useEffect(() => {
         if (!form.pickup_date) { setAvailableHours([]); return; }
-        fetch(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
-            .then(r => r.json()).then(json => { if (json.status === 'ok') setAvailableHours(json.data); })
+        let cancelled = false;
+        fetchJson(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
+            .then(json => { if (!cancelled && json.status === 'ok') setAvailableHours(json.data); })
             .catch(console.error);
+        return () => { cancelled = true; };
     }, [form.pickup_date]);
 
     // Reverse geocode when pin dropped — fills address, extracts postal_code, auto-searches Biteship area
@@ -158,8 +166,7 @@ export default function OrderPage() {
             if (pc) {
                 setAreaLoading(true);
                 try {
-                    const ar = await fetch(`${API_URL}/api/biteship/areas?search=${pc}`);
-                    const aj = await ar.json();
+                    const aj = await fetchJson(`${API_URL}/api/biteship/areas?search=${pc}`);
                     setAreaResults(aj.data ?? []);
                 } catch { setAreaResults([]); }
                 finally { setAreaLoading(false); }
@@ -208,13 +215,12 @@ export default function OrderPage() {
                     items: validItems,
                 };
 
-                const res = await fetch(`${API_URL}/api/biteship/rates`, {
+                const json = await fetchJson(`${API_URL}/api/biteship/rates`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
 
-                const json = await res.json();
                 if (json.status === 'ok' && Array.isArray(json.data)) {
                     setAvailableRates(json.data);
                 } else {
@@ -285,11 +291,11 @@ export default function OrderPage() {
 
     const handleReviewOrder = () => {
         setErrorMessage('');
-        if (!form.customer_name.trim()) { setErrorMessage('Nama customer wajib diisi'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        if (!form.customer_name.trim()) { setErrorMessage('Nama Pelanggan wajib diisi'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
         if (!form.customer_phone.trim()) { setErrorMessage('Nomor WhatsApp wajib diisi'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
-        if (!form.pickup_date) { setErrorMessage('Tanggal pickup wajib diisi'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        if (!form.pickup_date) { setErrorMessage('Tanggal Pengambilan wajib diisi'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
         const [hh, mm] = form.pickup_time.split(':');
-        if (!hh || !mm) { setErrorMessage('Waktu pickup wajib dipilih'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        if (!hh || !mm) { setErrorMessage('Waktu Pengambilan wajib dipilih'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
         if (!form.payment_method) { setErrorMessage('Metode pembayaran wajib dipilih'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
         if (deliveryMethod === 'store_delivery') {
             if (!deliveryAddress.trim()) { setErrorMessage('Alamat pengiriman wajib diisi'); return window.scrollTo({ top: 0, behavior: 'smooth' }); }
@@ -323,12 +329,11 @@ export default function OrderPage() {
                 delivery_type_preference: selectedShippingType, // Add preference so the backend/admins know what they requested
             };
 
-            const res = await fetch(`${API_URL}/api/order`, {
+            const json = await fetchJson(`${API_URL}/api/order`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-            const json = await res.json();
             if (json.status === 'ok') {
                 setShowConfirm(false);
                 setSubmittedOrder(json.data);
@@ -388,6 +393,16 @@ export default function OrderPage() {
                             <span className="font-black text-primary">Rp {submittedOrder.items?.reduce((s: number, i: any) => s + (menus.find(m => m.name === i.box_type)?.price || 0) * i.qty, 0).toLocaleString('id-ID')}</span>
                         </div>
                     </div>
+                    {submittedOrder.payment_method === 'TRANSFER' && (
+                        <div className="mb-6 p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                            <p className="text-[10px] font-black uppercase text-primary/60 mb-3 text-center tracking-wider">
+                                Scan QR untuk Bayar (QRIS)
+                            </p>
+                            <div className="flex justify-center bg-white p-2 rounded-xl border border-primary/10 shadow-sm">
+                                <img src="/images/qris-placeholder.svg" alt="QRIS Pembayaran" width={180} height={180} className="rounded-lg" />
+                            </div>
+                        </div>
+                    )}
                     <button onClick={resetForm} className="w-full py-3.5 bg-primary text-brand-yellow font-extrabold rounded-2xl shadow-lg">
                         Buat Pesanan Baru
                     </button>
@@ -417,7 +432,7 @@ export default function OrderPage() {
 
                     {/* Customer Name */}
                     <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nama Customer *</label>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nama Pelanggan *</label>
                         <input className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholder="Nama pemesan" autoCapitalize="words" value={form.customer_name} onChange={e => setForm(f => ({ ...f, customer_name: toTitleCase(e.target.value) }))} />
                     </div>
 
@@ -430,13 +445,13 @@ export default function OrderPage() {
                     {/* Pickup Date & Time */}
                     <div className="flex gap-3">
                         <div className="flex-1 space-y-1.5 flex flex-col">
-                            <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pickup *</label>
+                            <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pengambilan *</label>
                             <div className="flex-1 min-h-[44px]">
                                 <DatePicker selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null} onChange={(date: Date | null) => { if (date) { const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); setForm(f => ({ ...f, pickup_date: local.toISOString().split('T')[0] })); } }} filterDate={filterPassedDates} dateFormat="dd/MM/yyyy" className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholderText="Pilih Tanggal" disabled={!quotasLoading && quotas.length === 0} />
                             </div>
                         </div>
                         <div className="w-36 space-y-1.5 relative">
-                            <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu *</label>
+                            <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu Pengambilan *</label>
                             <button type="button" disabled={!quotasLoading && quotas.length === 0} onClick={() => setShowTimePicker(!showTimePicker)} className="w-full h-11 px-4 flex items-center justify-center gap-1 rounded-xl border-2 border-primary/10 bg-primary/5 disabled:opacity-50 hover:bg-primary/10 transition-colors text-primary text-sm font-extrabold focus:outline-none focus:border-primary/30">
                                 <span>{form.pickup_time.split(':')[0] || '--'}</span>
                                 <span className="opacity-50">:</span>
@@ -500,7 +515,7 @@ export default function OrderPage() {
                         {form.pesanan.map((item, idx) => (
                             <div key={idx} className="bg-primary/5 rounded-2xl p-4 space-y-3">
                                 <div className="flex justify-between items-center pb-2 border-b border-primary/5">
-                                    <span className="text-[11px] font-black uppercase text-primary/60 tracking-widest">Item #{idx + 1}</span>
+                                    <span className="text-[11px] font-black uppercase text-primary/60 tracking-widest">Item {idx + 1}</span>
                                     {form.pesanan.length > 1 && (
                                         <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.filter((_, i) => i !== idx) }))} className="text-[10px] font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-lg hover:bg-red-100 flex items-center gap-1">
                                             <LuTrash2 /> Hapus
@@ -551,7 +566,7 @@ export default function OrderPage() {
                                                     {item.name ? (
                                                         <span className="text-sm font-bold text-primary line-clamp-2">{item.name}</span>
                                                     ) : (
-                                                        <span className="text-xs font-semibold text-red-500">* Belum ada rasa yang dipilih</span>
+                                                        <span className="text-xs font-semibold text-red-500">* Pilih minimal 1 rasa</span>
                                                     )}
                                                 </div>
                                             )}
@@ -595,6 +610,7 @@ export default function OrderPage() {
                                                                         <div className={`w-4 h-4 rounded flex items-center justify-center border-2 transition-colors shrink-0 ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20'}`}>
                                                                             {isChecked && <LuCheck className="text-[10px] stroke-[4]" />}
                                                                         </div>
+                                                                        {v.image_url && <img src={v.image_url} alt={vName} className="w-8 h-8 rounded-lg object-cover shrink-0" />}
                                                                         <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">{vName}</span>
                                                                     </label>
                                                                 );
@@ -621,6 +637,7 @@ export default function OrderPage() {
                                                                                     <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 transition-colors shrink-0 ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20'}`}>
                                                                                         {isChecked && <div className="w-2.5 h-2.5 rounded-full bg-brand-yellow" />}
                                                                                     </div>
+                                                                                    {v.image_url && <img src={v.image_url} alt={vName} className="w-8 h-8 rounded-lg object-cover shrink-0" />}
                                                                                     <span className="text-sm font-extrabold leading-tight select-none flex-1 break-words text-left">{vName}</span>
                                                                                 </label>
                                                                             );
@@ -649,7 +666,7 @@ export default function OrderPage() {
                     {/* Catatan Pesanan — above payment */}
                     <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Catatan Pesanan (opsional)</label>
-                        <textarea rows={3} className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" placeholder="Tambahan info pesanan..." value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+                        <textarea rows={3} className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" placeholder="Tambahkan catatan pesanan..." value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
                     </div>
 
                     {/* Payment Method — REQUIRED */}
@@ -659,7 +676,8 @@ export default function OrderPage() {
                             <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value as typeof form.payment_method }))} className="w-full h-11 px-4 pr-10 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 appearance-none">
                                 <option value="">Pilih metode pembayaran</option>
                                 <option value="TRANSFER">Transfer</option>
-                                <option value="CASH">Cash</option>
+                                <option value="QRIS">QRIS</option>
+                                <option value="CASH">Tunai</option>
                             </select>
                             <LuChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
                         </div>
@@ -751,7 +769,7 @@ export default function OrderPage() {
                                     {selectedShippingType === 'same_day' && (
                                         <div className="mt-2 p-2 bg-brand-yellow/20 border border-brand-yellow rounded-xl flex items-start gap-2 animate-in fade-in zoom-in-95">
                                             <LuInfo className="text-primary mt-0.5 shrink-0" size={14} />
-                                            <p className="text-[10px] font-bold text-primary leading-tight">Pengiriman Same Day maksimal pickup jam <strong>12:00</strong>. Waktu pickup otomatis disesuaikan.</p>
+                                            <p className="text-[10px] font-bold text-primary leading-tight">Pengiriman Same Day maksimal pickup jam <strong>12:00</strong>. Waktu Pengambilan otomatis disesuaikan.</p>
                                         </div>
                                     )}
                                 </div>
@@ -799,7 +817,7 @@ export default function OrderPage() {
                 {/* Submit */}
                 <div className="px-5 py-5 border-t border-primary/10 bg-white sm:rounded-b-3xl mt-auto">
                     <button onClick={handleReviewOrder} disabled={submitting} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all disabled:opacity-50 py-3.5">
-                        {submitting ? 'Mengirim...' : 'Review & Kirim Pesanan'}
+                        {submitting ? 'Mengirim...' : 'Review & Buat Pesanan'}
                     </button>
                 </div>
             </div>
@@ -858,7 +876,7 @@ export default function OrderPage() {
                         <div className="flex gap-3">
                             <button onClick={() => setShowConfirm(false)} disabled={submitting} className="flex-1 py-3.5 rounded-xl font-bold text-primary bg-primary/10 hover:bg-primary/20 transition-all text-sm">Cek Lagi</button>
                             <button onClick={submitOrder} disabled={submitting} className="flex-1 py-3.5 rounded-xl font-bold text-brand-yellow bg-primary hover:bg-primary/90 transition-all text-sm shadow-lg disabled:opacity-50">
-                                {submitting ? 'Memproses...' : 'Kirim Pesanan!'}
+                                {submitting ? 'Memproses...' : 'Buat Pesanan'}
                             </button>
                         </div>
                     </div>

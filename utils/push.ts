@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+import { fetchJson } from './fetchJson';
+import { API_URL } from './config';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -21,8 +22,7 @@ export async function subscribePush(): Promise<boolean> {
         if (permission !== 'granted') return false;
 
         // Ambil public key dari backend
-        const res = await fetch(`${API_URL}/api/push/vapid-public-key`);
-        const { key } = await res.json();
+        const { key } = await fetchJson(`${API_URL}/api/push/vapid-public-key`);
         if (!key) return false;
 
         // Register / retrieve service worker

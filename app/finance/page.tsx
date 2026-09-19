@@ -13,6 +13,8 @@ import {
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 interface OrderItem {
     id: number;
@@ -78,19 +80,19 @@ export default function FinancePage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSidebar, setShowSidebar] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('finance');
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
     const [activePayment, setActivePayment] = useState<'ALL' | 'TRANSFER' | 'CASH'>('ALL');
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [showAllOrders, setShowAllOrders] = useState(false);
 
     useEffect(() => {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-        fetch(`${apiUrl}/api/orders?status=DONE`)
-            .then(r => r.json())
-            .then(j => { if (j.status === 'ok') setOrders(j.data); })
+        let cancelled = false;
+        fetchJson(`${API_URL}/api/orders?status=DONE`)
+            .then(j => { if (!cancelled && j.status === 'ok') setOrders(j.data); })
             .catch(console.error)
-            .finally(() => setLoading(false));
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
     }, []);
 
     const doneOrders = orders.filter(o => o.status === 'DONE');
@@ -133,8 +135,8 @@ export default function FinancePage() {
     const grandTotal = doneOrders.reduce((s, o) => s + orderRevenue(o), 0);
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
-            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
+        <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col items-center">
+            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-white shadow-2xl">
 
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 

@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 interface UserRole {
     user_id: string;
@@ -17,24 +20,26 @@ const DEFAULT_ROLE: UserRole = {
     allowed_pages: ['orders'],
 };
 
-export function useUserRole() {
+export function useUserRole(requiredPage?: string) {
     const [userRole, setUserRole] = useState<UserRole>(DEFAULT_ROLE);
     const [loading, setLoading] = useState(true);
+    const router = useRouter();
 
     useEffect(() => {
+        let cancelled = false;
+
         const fetchRole = async () => {
             try {
                 const supabase = createClient();
                 const { data: { user } } = await supabase.auth.getUser();
 
                 if (!user) {
-                    setLoading(false);
+                    if (!cancelled) setLoading(false);
                     return;
                 }
 
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-                const res = await fetch(`${apiUrl}/api/user-role/${user.id}`);
-                const json = await res.json();
+                const json = await fetchJson(`${API_URL}/api/user-role/${user.id}`);
+                if (cancelled) return;
 
                 if (json.status === 'ok' && json.data) {
                     setUserRole(json.data);
@@ -45,12 +50,20 @@ export function useUserRole() {
             } catch {
                 // Keep defaults on error
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         fetchRole();
+        return () => { cancelled = true; };
     }, []);
+
+    useEffect(() => {
+        if (loading || !requiredPage) return;
+        if (!userRole.allowed_pages.includes(requiredPage)) {
+            router.replace('/orders');
+        }
+    }, [loading, requiredPage, userRole.allowed_pages, router]);
 
     return {
         role: userRole.role,

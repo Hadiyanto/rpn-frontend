@@ -3,22 +3,23 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { LuChevronLeft, LuHistory } from 'react-icons/lu';
+import { useUserRole } from '@/hooks/useUserRole';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 export default function StockHistoryPage() {
     const router = useRouter();
     const params = useParams();
     const stockId = params.id as string;
+    useUserRole('stock');
 
     const [history, setHistory] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
     const fetchHistory = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiUrl}/api/stocks/${stockId}/history`);
-            const json = await res.json();
+            const json = await fetchJson(`${API_URL}/api/stocks/${stockId}/history`);
             if (json.status === 'ok') {
                 setHistory(json.data);
             }
@@ -46,7 +47,7 @@ export default function StockHistoryPage() {
     };
 
     return (
-        <div className="bg-brand-yellow min-h-screen font-display text-primary pb-20 p-0 m-0">
+        <div className="bg-brand-white min-h-screen font-display text-primary pb-20 p-0 m-0">
             {/* Header */}
             <div className="sticky top-0 z-40 bg-brand-yellow/90 backdrop-blur-md border-b border-primary/10">
                 <div className="flex items-center px-4 py-4 gap-3">

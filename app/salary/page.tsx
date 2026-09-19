@@ -8,10 +8,14 @@ import { useUserRole } from '@/hooks/useUserRole';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/useToast';
+import Toast from '@/components/Toast';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 export default function SalaryPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('salary');
     const router = useRouter();
 
     const [salaries, setSalaries] = useState<any[]>([]);
@@ -23,25 +27,18 @@ export default function SalaryPage() {
 
     // Default selected date for generation is today
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-    const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
-
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
-    const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
-        setToast({ title, body, type });
-        setTimeout(() => setToast(null), 3000);
-    };
+    const { toast, showToast, hideToast } = useToast();
 
     const fetchSalaries = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiUrl}/api/daily-salary`);
-            const json = await res.json();
+            const json = await fetchJson(`${API_URL}/api/daily-salary`);
             if (json.status === 'ok') {
                 setSalaries(json.data);
             }
         } catch (e) {
             console.error(e);
+            showToast('❌ Error', 'Gagal memuat riwayat gaji', 'error');
         } finally {
             setLoading(false);
         }
@@ -63,12 +60,11 @@ export default function SalaryPage() {
             });
             const dateStr = jakartaFormatter.format(selectedDate); // Output: YYYY-MM-DD
 
-            const res = await fetch(`${apiUrl}/api/daily-salary/preview`, {
+            const json = await fetchJson(`${API_URL}/api/daily-salary/preview`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date: dateStr })
             });
-            const json = await res.json();
 
             if (json.status === 'ok') {
                 setPreviewData(json.data);
@@ -89,12 +85,11 @@ export default function SalaryPage() {
         try {
             const dateStr = previewData.date; // Use the date from preview data to be safe
 
-            const res = await fetch(`${apiUrl}/api/daily-salary/generate`, {
+            const json = await fetchJson(`${API_URL}/api/daily-salary/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date: dateStr })
             });
-            const json = await res.json();
 
             if (json.status === 'ok') {
                 showToast('✅ Berhasil', `Gaji untuk tanggal ${dateStr} berhasil disimpan ke DB.`, 'success');
@@ -118,7 +113,7 @@ export default function SalaryPage() {
     };
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen">
+        <div className="bg-brand-white font-display text-primary min-h-screen">
             <Sidebar
                 open={isSidebarOpen}
                 onClose={() => setSidebarOpen(false)}
@@ -282,20 +277,7 @@ export default function SalaryPage() {
                 </div>
             )}
 
-            {/* Toast */}
-            {toast && (
-                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
-                    <div className={`shadow-xl rounded-2xl p-4 flex items-start gap-3 w-80 max-w-[90vw] ${toast.type === 'success' ? 'bg-green-500 text-white' : toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-primary text-brand-yellow'}`}>
-                        <div className="flex-1">
-                            <h4 className="font-bold text-sm mb-0.5">{toast.title}</h4>
-                            <p className="text-xs opacity-90">{toast.body}</p>
-                        </div>
-                        <button onClick={() => setToast(null)} className="p-1 hover:bg-black/10 rounded-lg transition-colors">
-                            <MdClose className="text-lg" />
-                        </button>
-                    </div>
-                </div>
-            )}
+            <Toast toast={toast} onClose={hideToast} />
         </div>
     );
 }

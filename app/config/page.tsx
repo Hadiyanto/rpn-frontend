@@ -4,17 +4,21 @@ import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import WhatsAppManager from '@/components/WhatsAppManager';
 import { LuMenu, LuSettings, LuCheck, LuX, LuChevronDown, LuChevronUp, LuCalendar } from 'react-icons/lu';
-import { MdClose } from 'react-icons/md';
 import { useUserRole } from '@/hooks/useUserRole';
+import { useToast } from '@/hooks/useToast';
+import Toast from '@/components/Toast';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
+import type { Menu, Variant } from '@/types/menu';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
 export default function ConfigPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('config');
 
-    const [menus, setMenus] = useState<any[]>([]);
-    const [variants, setVariants] = useState<any[]>([]);
+    const [menus, setMenus] = useState<Menu[]>([]);
+    const [variants, setVariants] = useState<Variant[]>([]);
     const [quotas, setQuotas] = useState<any[]>([]);
     const [hourlyQuotas, setHourlyQuotas] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -32,29 +36,17 @@ export default function ConfigPage() {
     const [newHourlyQty, setNewHourlyQty] = useState('10');
     const [newHourlyHampers, setNewHourlyHampers] = useState('0');
 
-    // Toast state
-    const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
-
-    const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
-        setToast({ title, body, type });
-        setTimeout(() => setToast(null), 3000);
-    };
-
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+    const { toast, showToast, hideToast } = useToast();
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [mRes, vRes, qRes, hqRes] = await Promise.all([
-                fetch(`${apiUrl}/api/menu`),
-                fetch(`${apiUrl}/api/variants`),
-                fetch(`${apiUrl}/api/daily-quota`),
-                fetch(`${apiUrl}/api/hourly-quota`),
+            const [mData, vData, qData, hqData] = await Promise.all([
+                fetchJson(`${API_URL}/api/menu`),
+                fetchJson(`${API_URL}/api/variants`),
+                fetchJson(`${API_URL}/api/daily-quota`),
+                fetchJson(`${API_URL}/api/hourly-quota`),
             ]);
-            const mData = await mRes.json();
-            const vData = await vRes.json();
-            const qData = await qRes.json();
-            const hqData = await hqRes.json();
 
             if (mData.status === 'ok') setMenus(mData.data);
             if (vData.status === 'ok') setVariants(vData.data);
@@ -62,6 +54,7 @@ export default function ConfigPage() {
             if (hqData.status === 'ok') setHourlyQuotas(hqData.data);
         } catch (e) {
             console.error(e);
+            showToast('❌ Error', 'Gagal memuat data konfigurasi', 'error');
         } finally {
             setLoading(false);
         }
@@ -74,7 +67,7 @@ export default function ConfigPage() {
 
     const toggleMenu = async (id: number, currentActive: boolean) => {
         try {
-            await fetch(`${apiUrl}/api/menu/${id}`, {
+            await fetchJson(`${API_URL}/api/menu/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ is_active: !currentActive }),
@@ -82,6 +75,7 @@ export default function ConfigPage() {
             fetchData();
         } catch (e) {
             console.error('Failed to update menu', e);
+            showToast('❌ Error', 'Gagal mengubah status menu', 'error');
         }
     };
 
@@ -90,7 +84,7 @@ export default function ConfigPage() {
         if (isNaN(newPrice) || newPrice === currentPrice) return;
 
         try {
-            await fetch(`${apiUrl}/api/menu/${id}`, {
+            await fetchJson(`${API_URL}/api/menu/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ price: newPrice }),
@@ -98,12 +92,13 @@ export default function ConfigPage() {
             fetchData();
         } catch (e) {
             console.error('Failed to update menu price', e);
+            showToast('❌ Error', 'Gagal mengubah harga menu', 'error');
         }
     };
 
     const toggleVariant = async (id: number, currentActive: boolean) => {
         try {
-            await fetch(`${apiUrl}/api/variants/${id}`, {
+            await fetchJson(`${API_URL}/api/variants/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ is_active: !currentActive }),
@@ -111,6 +106,7 @@ export default function ConfigPage() {
             fetchData();
         } catch (e) {
             console.error('Failed to update variant', e);
+            showToast('❌ Error', 'Gagal mengubah status varian', 'error');
         }
     };
 
@@ -120,12 +116,11 @@ export default function ConfigPage() {
             return;
         }
         try {
-            const res = await fetch(`${apiUrl}/api/daily-quota`, {
+            const json = await fetchJson(`${API_URL}/api/daily-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date: newQuotaDate, qty: parseInt(newQuotaQty, 10), hampers_qty: parseInt(newQuotaHampers || '0', 10) }),
             });
-            const json = await res.json();
             if (json.status === 'ok') {
                 showToast('✅ Berhasil', 'Kuota berhasil ditambahkan!', 'success');
                 setNewQuotaDate('');
@@ -144,14 +139,15 @@ export default function ConfigPage() {
         const hampers_qty = parseInt(newHampersQtyStr, 10);
         if (isNaN(qty) || isNaN(hampers_qty) || (qty === currentQty && hampers_qty === currentHampersQty)) return;
         try {
-            const res = await fetch(`${apiUrl}/api/daily-quota/${id}`, {
+            await fetchJson(`${API_URL}/api/daily-quota/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ qty, hampers_qty }),
             });
-            if (res.ok) fetchData();
+            fetchData();
         } catch (e) {
             console.error(e);
+            showToast('❌ Error', 'Gagal mengubah kuota', 'error');
         }
     };
 
@@ -161,12 +157,11 @@ export default function ConfigPage() {
             return;
         }
         try {
-            const res = await fetch(`${apiUrl}/api/hourly-quota`, {
+            const json = await fetchJson(`${API_URL}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ time_str: newHourlyTime, qty: parseInt(newHourlyQty, 10), hampers_qty: parseInt(newHourlyHampers || '0', 10), is_active: true }),
             });
-            const json = await res.json();
             if (json.status === 'ok') {
                 showToast('✅ Berhasil', 'Kuota Per Jam ditambahkan!', 'success');
                 // Optional: reset fields
@@ -185,32 +180,34 @@ export default function ConfigPage() {
         const hampers_qty = parseInt(newHampersQtyStr, 10);
         if (isNaN(qty) || isNaN(hampers_qty) || (qty === currentQty && hampers_qty === currentHampersQty)) return;
         try {
-            const res = await fetch(`${apiUrl}/api/hourly-quota`, {
+            await fetchJson(`${API_URL}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ time_str, qty, hampers_qty, is_active }),
             });
-            if (res.ok) fetchData();
+            fetchData();
         } catch (e) {
             console.error(e);
+            showToast('❌ Error', 'Gagal mengubah kuota per jam', 'error');
         }
     };
 
     const toggleHourlyQuotaActive = async (id: number, time_str: string, is_active: boolean, qty: number, hampers_qty: number) => {
         try {
-            const res = await fetch(`${apiUrl}/api/hourly-quota`, {
+            await fetchJson(`${API_URL}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ time_str, qty, hampers_qty, is_active: !is_active }),
             });
-            if (res.ok) fetchData();
+            fetchData();
         } catch (e) {
             console.error(e);
+            showToast('❌ Error', 'Gagal mengubah status jam', 'error');
         }
     };
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen">
+        <div className="bg-brand-white font-display text-primary min-h-screen">
             <Sidebar
                 open={isSidebarOpen}
                 onClose={() => setSidebarOpen(false)}
@@ -559,20 +556,7 @@ export default function ConfigPage() {
                 </section>
             </div>
 
-            {/* Custom Toast Notification Overlay */}
-            {toast && (
-                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
-                    <div className={`shadow-xl rounded-2xl p-4 flex items-start gap-3 w-80 max-w-[90vw] ${toast.type === 'success' ? 'bg-green-500 text-white' : toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-primary text-brand-yellow'}`}>
-                        <div className="flex-1">
-                            <h4 className="font-bold text-sm mb-0.5">{toast.title}</h4>
-                            <p className="text-xs opacity-90">{toast.body}</p>
-                        </div>
-                        <button onClick={() => setToast(null)} className="p-1 hover:bg-black/10 rounded-lg transition-colors">
-                            <MdClose className="text-lg" />
-                        </button>
-                    </div>
-                </div>
-            )}
+            <Toast toast={toast} onClose={hideToast} />
         </div>
     );
 }

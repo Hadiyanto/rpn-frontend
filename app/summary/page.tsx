@@ -13,6 +13,8 @@ import {
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
@@ -37,7 +39,7 @@ export default function SummaryPage() {
     const [summary, setSummary] = useState<SummaryData | null>(null);
     const [loading, setLoading] = useState(false);
     const [showSidebar, setShowSidebar] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('summary');
 
     // Default to current month
     const today = new Date();
@@ -45,8 +47,6 @@ export default function SummaryPage() {
 
     const [startDate, setStartDate] = useState<Date>(firstDay);
     const [endDate, setEndDate] = useState<Date>(today);
-
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
     const fetchSummary = async () => {
         if (!startDate || !endDate) return;
@@ -57,8 +57,7 @@ export default function SummaryPage() {
         const endStr = new Date(endDate.getTime() - endDate.getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
         try {
-            const res = await fetch(`${apiUrl}/api/finance/summary?start=${startStr}&end=${endStr}`);
-            const json = await res.json();
+            const json = await fetchJson(`${API_URL}/api/finance/summary?start=${startStr}&end=${endStr}`);
             if (json.status === 'ok') {
                 setSummary(json.data);
             } else {
@@ -78,8 +77,8 @@ export default function SummaryPage() {
     }, [startDate, endDate]);
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
-            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
+        <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col items-center">
+            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-white shadow-2xl">
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
                 {/* Header */}

@@ -11,6 +11,8 @@ import {
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 interface OrderItem {
     id: number;
@@ -45,18 +47,18 @@ export default function AnalyticsPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSidebar, setShowSidebar] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('analytics');
     const [rangeStart, setRangeStart] = useState<string | null>(getTodayStr());
     const [rangeEnd, setRangeEnd] = useState<string | null>(null);
     const [activeStatus, setActiveStatus] = useState<string>('ALL');
 
     useEffect(() => {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-        fetch(`${apiUrl}/api/orders`)
-            .then(r => r.json())
-            .then(j => { if (j.status === 'ok') setOrders(j.data); })
+        let cancelled = false;
+        fetchJson(`${API_URL}/api/orders`)
+            .then(j => { if (!cancelled && j.status === 'ok') setOrders(j.data); })
             .catch(console.error)
-            .finally(() => setLoading(false));
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
     }, []);
 
     const handleDateChip = (date: string) => {
@@ -127,8 +129,8 @@ export default function AnalyticsPage() {
     }
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
-            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
+        <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col items-center">
+            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-white shadow-2xl">
 
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
@@ -403,7 +405,7 @@ export default function AnalyticsPage() {
                             {timeSlots.length > 0 && (
                                 <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
                                     <div className="mb-5">
-                                        <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black">Orders per Waktu Pickup</p>
+                                        <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black">Orders per Waktu Pengambilan</p>
                                         <p className="text-3xl font-black text-primary mt-1">{totalOrders} <span className="text-sm font-bold text-primary/40">order</span></p>
                                     </div>
                                     <div className="flex gap-3 items-end h-36 px-1">

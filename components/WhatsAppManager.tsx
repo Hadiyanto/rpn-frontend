@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MdQrCode, MdRefresh, MdSend, MdCheckCircle, MdError, MdClose, MdSync } from 'react-icons/md';
 import Image from 'next/image';
+import { API_URL } from '@/utils/config';
 
 interface Contact {
     id: number;
@@ -97,7 +98,7 @@ export default function WhatsAppManager() {
     const checkStatus = async () => {
         try {
             const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/whatsapp/status`, {
+            const response = await fetch(`${API_URL}/api/whatsapp/status`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
 
@@ -121,7 +122,7 @@ export default function WhatsAppManager() {
         try {
             setIsLoading(true);
             const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/whatsapp/qr`, {
+            const response = await fetch(`${API_URL}/api/whatsapp/qr`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
 
@@ -145,7 +146,7 @@ export default function WhatsAppManager() {
         try {
             setIsLoading(true);
             const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/whatsapp/regenerate`, {
+            const response = await fetch(`${API_URL}/api/whatsapp/regenerate`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
             });
@@ -177,7 +178,7 @@ export default function WhatsAppManager() {
     const fetchContacts = async () => {
         try {
             const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/whatsapp/contacts`, {
+            const response = await fetch(`${API_URL}/api/whatsapp/contacts`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
 
@@ -239,7 +240,7 @@ export default function WhatsAppManager() {
                     .map(c => c.phoneNumber);
             }
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/whatsapp/send`, {
+            const response = await fetch(`${API_URL}/api/whatsapp/send`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

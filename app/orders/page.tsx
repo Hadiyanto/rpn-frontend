@@ -31,6 +31,8 @@ import { printOrder } from '@/utils/printer';
 import { subscribePush } from '@/utils/push';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 interface OrderItem {
     id?: number;
@@ -141,7 +143,7 @@ export default function OrdersPage() {
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [showSidebar, setShowSidebar] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('orders');
     const [seenOrderCount, setSeenOrderCount] = useState<number>(() => {
         if (typeof window === 'undefined') return 0;
         return Number(localStorage.getItem('rpn_seen_order_count') ?? 0);
@@ -166,13 +168,11 @@ export default function OrdersPage() {
     const handleStatusChange = async (orderId: number, newStatus: string) => {
         setUpdatingStatusId(orderId);
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-            const res = await fetch(`${apiUrl}/api/order/${orderId}/status`, {
+            const json = await fetchJson(`${API_URL}/api/order/${orderId}/status`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus }),
             });
-            const json = await res.json();
             if (json.status === 'ok') {
                 setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as Order['status'] } : o));
             } else {
@@ -212,8 +212,7 @@ export default function OrdersPage() {
         if (!waOrder) return;
         setSendingWa(true);
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-            const res = await fetch(`${apiUrl}/api/whatsapp/send`, {
+            const res = await fetch(`${API_URL}/api/whatsapp/send`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -243,14 +242,15 @@ export default function OrdersPage() {
     const [availableHours, setAvailableHours] = useState<any[]>([]);
 
     useEffect(() => {
+        let cancelled = false;
         const fetchOptions = async () => {
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
                 const [r1, r2, r3] = await Promise.all([
-                    fetch(`${apiUrl}/api/menu`).then(r => r.json()),
-                    fetch(`${apiUrl}/api/variants`).then(r => r.json()),
-                    fetch(`${apiUrl}/api/daily-quota`).then(r => r.json()),
+                    fetchJson(`${API_URL}/api/menu`),
+                    fetchJson(`${API_URL}/api/variants`),
+                    fetchJson(`${API_URL}/api/daily-quota`),
                 ]);
+                if (cancelled) return;
                 if (r1.status === 'ok') setMenus(r1.data);
                 if (r2.status === 'ok') setVariants(r2.data);
                 if (r3.status === 'ok') setQuotas(r3.data);
@@ -259,6 +259,7 @@ export default function OrdersPage() {
             }
         };
         fetchOptions();
+        return () => { cancelled = true; };
     }, []);
 
     const filterPassedDates = (time: Date) => {
@@ -285,13 +286,11 @@ export default function OrdersPage() {
     const handlePaymentMethodChange = async (orderId: number, newMethod: string) => {
         setUpdatingPaymentId(orderId);
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-            const res = await fetch(`${apiUrl}/api/order/${orderId}/payment-method`, {
+            const json = await fetchJson(`${API_URL}/api/order/${orderId}/payment-method`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ payment_method: newMethod || null }),
             });
-            const json = await res.json();
             if (json.status === 'ok') {
                 setOrders(prev => prev.map(o => o.id === orderId ? { ...o, payment_method: newMethod as Order['payment_method'] } : o));
             } else {
@@ -325,15 +324,15 @@ export default function OrdersPage() {
             setAvailableHours([]);
             return;
         }
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-        fetch(`${apiUrl}/api/hourly-quota/availability?date=${form.pickup_date}`)
-            .then(r => r.json())
+        let cancelled = false;
+        fetchJson(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
             .then(json => {
-                if (json.status === 'ok') {
+                if (!cancelled && json.status === 'ok') {
                     setAvailableHours(json.data);
                 }
             })
             .catch(console.error);
+        return () => { cancelled = true; };
     }, [form.pickup_date]);
 
     const getIsHourAvailable = (hStr: string) => {
@@ -365,17 +364,15 @@ export default function OrdersPage() {
     });
 
     const submitOrder = async () => {
-        if (!form.customer_name.trim()) { alert('Nama customer wajib diisi'); return; }
+        if (!form.customer_name.trim()) { alert('Nama Pelanggan wajib diisi'); return; }
         if (!form.customer_phone.trim()) { alert('Nomor WhatsApp wajib diisi'); return; }
-        if (!form.pickup_date) { alert('Tanggal pickup wajib diisi'); return; }
+        if (!form.pickup_date) { alert('Tanggal Pengambilan wajib diisi'); return; }
         if (form.pesanan.some(p => !p.name.trim())) { alert('Nama pesanan tidak boleh kosong'); return; }
         setSubmitting(true);
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
             if (editingOrder) {
                 // EDIT mode
-                const res = await fetch(`${apiUrl}/api/order/${editingOrder.id}`, {
+                const json = await fetchJson(`${API_URL}/api/order/${editingOrder.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -390,11 +387,9 @@ export default function OrdersPage() {
                             .map(p => ({ box_type: p.box_type, name: normalizeVariant(p.name.trim()), qty: p.qty })),
                     }),
                 });
-                const json = await res.json();
                 if (json.status === 'ok') {
                     // Refresh orders
-                    const res2 = await fetch(`${apiUrl}/api/orders`);
-                    const json2 = await res2.json();
+                    const json2 = await fetchJson(`${API_URL}/api/orders`);
                     if (json2.status === 'ok') setOrders(json2.data);
                     setShowSheet(false);
                     setEditingOrder(null);
@@ -404,7 +399,7 @@ export default function OrdersPage() {
                 }
             } else {
                 // CREATE mode
-                const res = await fetch(`${apiUrl}/api/order`, {
+                const json = await fetchJson(`${API_URL}/api/order`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -419,11 +414,9 @@ export default function OrdersPage() {
                             .map(p => ({ box_type: p.box_type, name: normalizeVariant(p.name.trim()), qty: p.qty })),
                     }),
                 });
-                const json = await res.json();
                 if (json.status === 'ok') {
                     // Refresh orders
-                    const res2 = await fetch(`${apiUrl}/api/orders`);
-                    const json2 = await res2.json();
+                    const json2 = await fetchJson(`${API_URL}/api/orders`);
                     if (json2.status === 'ok') setOrders(json2.data);
                     setShowSheet(false);
                     resetForm();
@@ -461,12 +454,12 @@ export default function OrdersPage() {
     };
 
     useEffect(() => {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        let cancelled = false;
 
         const fetchOrders = async (isFirst = false) => {
             try {
-                const res = await fetch(`${apiUrl}/api/orders`);
-                const json = await res.json();
+                const json = await fetchJson(`${API_URL}/api/orders`);
+                if (cancelled) return;
                 if (json.status === 'ok') {
                     const data = json.data as Order[];
 
@@ -488,13 +481,13 @@ export default function OrdersPage() {
             } catch (err) {
                 console.error('Failed to fetch orders:', err);
             } finally {
-                if (isFirst) setLoading(false);
+                if (isFirst && !cancelled) setLoading(false);
             }
         };
 
         fetchOrders(true);
         const timer = setInterval(() => fetchOrders(false), 30_000);
-        return () => clearInterval(timer);
+        return () => { cancelled = true; clearInterval(timer); };
     }, []);
 
     // Auto-subscribe push notifications
@@ -524,8 +517,8 @@ export default function OrdersPage() {
     });
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
-            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
+        <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col items-center">
+            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-white shadow-2xl">
 
                 {/* Sidebar */}
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
@@ -933,7 +926,7 @@ export default function OrdersPage() {
 
                                 {/* Customer Name */}
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nama Customer *</label>
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nama Pelanggan *</label>
                                     <input
                                         className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30"
                                         placeholder="Nama pemesan"
@@ -962,7 +955,7 @@ export default function OrdersPage() {
                                 {/* Pickup Date & Time */}
                                 <div className="flex gap-3">
                                     <div className="flex-1 space-y-1.5 flex flex-col">
-                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pickup *</label>
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pengambilan *</label>
                                         <div className="flex-1 min-h-[44px]">
                                             <DatePicker
                                                 selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null}
@@ -980,7 +973,7 @@ export default function OrdersPage() {
                                         </div>
                                     </div>
                                     <div className="w-36 space-y-1.5 flex flex-col relative">
-                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu *</label>
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu Pengambilan *</label>
 
                                         {/* Custom Time Selector Button */}
                                         <button
@@ -1083,13 +1076,13 @@ export default function OrdersPage() {
                                         <div key={idx} className="bg-primary/5 rounded-2xl p-4 space-y-3">
                                             <div className="flex flex-col gap-4">
                                                 <div className="flex justify-between items-center pb-2 border-b border-primary/5">
-                                                    <span className="text-[11px] font-black uppercase text-primary/60 tracking-widest">Item #{idx + 1}</span>
+                                                    <span className="text-[11px] font-black uppercase text-primary/60 tracking-widest">Item {idx + 1}</span>
                                                     {form.pesanan.length > 1 && (
                                                         <button
                                                             onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.filter((_, i) => i !== idx) }))}
                                                             className="text-[10px] font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1"
                                                         >
-                                                            <LuTrash2 /> Hapus
+                                                            <LuTrash2 /> Hapus Item
                                                         </button>
                                                     )}
                                                 </div>

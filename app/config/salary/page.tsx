@@ -3,36 +3,32 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { LuMenu, LuBanknote, LuSettings, LuPlus, LuTrash, LuSave } from 'react-icons/lu';
-import { MdClose } from 'react-icons/md';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/useToast';
+import Toast from '@/components/Toast';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 export default function SalaryConfigPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('config');
     const router = useRouter();
 
     const [configs, setConfigs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
-
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
-    const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
-        setToast({ title, body, type });
-        setTimeout(() => setToast(null), 3000);
-    };
+    const { toast, showToast, hideToast } = useToast();
 
     const fetchConfig = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiUrl}/api/salary-config`);
-            const json = await res.json();
+            const json = await fetchJson(`${API_URL}/api/salary-config`);
             if (json.status === 'ok') {
                 setConfigs(json.data);
             }
         } catch (e) {
             console.error(e);
+            showToast('❌ Error', 'Gagal memuat konfigurasi gaji', 'error');
         } finally {
             setLoading(false);
         }
@@ -44,12 +40,11 @@ export default function SalaryConfigPage() {
 
     const handleSave = async () => {
         try {
-            const res = await fetch(`${apiUrl}/api/salary-config`, {
+            const json = await fetchJson(`${API_URL}/api/salary-config`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(configs),
             });
-            const json = await res.json();
             if (json.status === 'ok') {
                 showToast('✅ Berhasil', 'Konfigurasi gaji berhasil disimpan', 'success');
                 fetchConfig();
@@ -85,7 +80,7 @@ export default function SalaryConfigPage() {
     };
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen">
+        <div className="bg-brand-white font-display text-primary min-h-screen">
             <Sidebar
                 open={isSidebarOpen}
                 onClose={() => setSidebarOpen(false)}
@@ -219,20 +214,7 @@ export default function SalaryConfigPage() {
                 </button>
             </div>
 
-            {/* Toast */}
-            {toast && (
-                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
-                    <div className={`shadow-xl rounded-2xl p-4 flex items-start gap-3 w-80 max-w-[90vw] ${toast.type === 'success' ? 'bg-green-500 text-white' : toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-primary text-brand-yellow'}`}>
-                        <div className="flex-1">
-                            <h4 className="font-bold text-sm mb-0.5">{toast.title}</h4>
-                            <p className="text-xs opacity-90">{toast.body}</p>
-                        </div>
-                        <button onClick={() => setToast(null)} className="p-1 hover:bg-black/10 rounded-lg transition-colors">
-                            <MdClose className="text-lg" />
-                        </button>
-                    </div>
-                </div>
-            )}
+            <Toast toast={toast} onClose={hideToast} />
         </div>
     );
 }

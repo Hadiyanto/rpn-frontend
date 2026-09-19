@@ -18,6 +18,8 @@ import {
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
@@ -94,7 +96,7 @@ export default function CashflowPage() {
     const [expenses, setExpenses] = useState<Pengeluaran[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSidebar, setShowSidebar] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('cashflow');
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
     const [activeTab, setActiveTab] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
     const [showAllItems, setShowAllItems] = useState(false);
@@ -111,19 +113,20 @@ export default function CashflowPage() {
 
     const resetExpForm = () => setExpForm({ name: '', category: '', price: '', date: getTodayStr() });
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
     useEffect(() => {
+        let cancelled = false;
         Promise.all([
-            fetch(`${apiUrl}/api/orders`).then(r => r.json()),
-            fetch(`${apiUrl}/api/pengeluaran`).then(r => r.json()),
+            fetchJson(`${API_URL}/api/orders`),
+            fetchJson(`${API_URL}/api/pengeluaran`),
         ])
             .then(([ojson, pjson]) => {
+                if (cancelled) return;
                 if (ojson.status === 'ok') setOrders(ojson.data);
                 if (pjson.status === 'ok') setExpenses(pjson.data);
             })
             .catch(console.error)
-            .finally(() => setLoading(false));
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
     }, []);
 
     const submitExpense = async () => {
@@ -131,7 +134,7 @@ export default function CashflowPage() {
         if (!expForm.price || Number(expForm.price) <= 0) { alert('Harga harus > 0'); return; }
         setSubmitting(true);
         try {
-            const res = await fetch(`${apiUrl}/api/pengeluaran`, {
+            const json = await fetchJson(`${API_URL}/api/pengeluaran`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -141,11 +144,9 @@ export default function CashflowPage() {
                     date: expForm.date || getTodayStr(),
                 }),
             });
-            const json = await res.json();
             if (json.status === 'ok') {
                 // Refresh expenses
-                const res2 = await fetch(`${apiUrl}/api/pengeluaran`);
-                const json2 = await res2.json();
+                const json2 = await fetchJson(`${API_URL}/api/pengeluaran`);
                 if (json2.status === 'ok') setExpenses(json2.data);
                 setShowSheet(false);
                 resetExpForm();
@@ -213,8 +214,8 @@ export default function CashflowPage() {
     const maxChart = Math.max(...chartData.map(([, v]) => Math.max(v.income, v.expense)), 1);
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col items-center">
-            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-yellow shadow-2xl">
+        <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col items-center">
+            <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-white shadow-2xl">
 
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 

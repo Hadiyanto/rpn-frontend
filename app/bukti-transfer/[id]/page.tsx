@@ -3,6 +3,8 @@
 import { useState, useEffect, use } from 'react';
 import { LuUpload, LuCheck, LuArrowLeft, LuPackage, LuReceipt } from 'react-icons/lu';
 import { useRouter } from 'next/navigation';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL, BCA_ACCOUNT_NUMBER, BCA_ACCOUNT_NAME } from '@/utils/config';
 
 interface OrderItem {
     id: number;
@@ -30,24 +32,26 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let cancelled = false;
         const fetchData = async () => {
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
                 const [orderRes, menuRes] = await Promise.all([
-                    fetch(`${apiUrl}/api/order/${id}`).then(r => r.json()),
-                    fetch(`${apiUrl}/api/menu`).then(r => r.json())
+                    fetchJson(`${API_URL}/api/order/${id}`),
+                    fetchJson(`${API_URL}/api/menu`)
                 ]);
+                if (cancelled) return;
 
                 if (orderRes.status === 'ok') setOrder(orderRes.data);
                 if (menuRes.status === 'ok') setMenus(menuRes.data);
             } catch (err) {
                 console.error('Gagal memuat data order', err);
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         fetchData();
+        return () => { cancelled = true; };
     }, [id]);
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,10 +64,8 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
             const formData = new FormData();
             formData.append('image', file);
 
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
             // 1. Upload to Cloudinary via backend
-            const uploadRes = await fetch(`${apiUrl}/api/upload-image`, {
+            const uploadRes = await fetch(`${API_URL}/api/upload-image`, {
                 method: 'POST',
                 body: formData,
             });
@@ -76,7 +78,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
             }
 
             // 2. Patch Order with the new image URL
-            const updateRes = await fetch(`${apiUrl}/api/order/${id}/transfer-img-url`, {
+            const updateRes = await fetch(`${API_URL}/api/order/${id}/transfer-img-url`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ transfer_img_url: uploadJson.imageUrl }),
@@ -97,7 +99,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
 
     if (success) {
         return (
-            <div className="bg-brand-yellow font-display min-h-screen flex flex-col items-center justify-center p-4">
+            <div className="bg-brand-white font-display min-h-screen flex flex-col items-center justify-center p-4">
                 <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center space-y-4 animate-in zoom-in-95 duration-300">
                     <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2 text-green-500">
                         <LuCheck className="text-4xl" />
@@ -107,7 +109,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                         Bukti transfer untuk Order #{id} telah tersimpan. Terima kasih!
                     </p>
                     <button
-                        onClick={() => router.push('/pesan')}
+                        onClick={() => router.push('/')}
                         className="w-full mt-4 h-12 bg-primary text-brand-yellow font-bold rounded-xl active:scale-95 transition-transform"
                     >
                         Buat Pesanan Baru
@@ -118,7 +120,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
     }
 
     return (
-        <div className="bg-brand-yellow font-display min-h-screen flex flex-col items-center p-4 pt-12 sm:pt-20 text-primary">
+        <div className="bg-brand-white font-display min-h-screen flex flex-col items-center p-4 pt-12 sm:pt-20 text-primary">
             <div className="w-full max-w-md">
                 {/* Title */}
                 <div className="flex flex-col mb-4">
@@ -168,10 +170,19 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                             <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold text-center">Data pesanan tidak ditemukan.</div>
                         )}
 
+                        <div className="bg-primary/5 rounded-2xl border border-primary/10 p-4">
+                            <p className="text-[10px] font-black uppercase text-primary/60 mb-3 text-center tracking-wider">
+                                Scan QR untuk Bayar (QRIS)
+                            </p>
+                            <div className="flex justify-center bg-white p-2 rounded-xl border border-primary/10 shadow-sm">
+                                <img src="/images/qris-placeholder.svg" alt="QRIS Pembayaran" width={180} height={180} className="rounded-lg" />
+                            </div>
+                        </div>
+
                         <div className="bg-blue-50 border-2 border-dashed border-blue-200 rounded-2xl p-4 text-center space-y-2">
-                            <h3 className="text-xs font-bold text-blue-900">Rekening BCA</h3>
-                            <p className="font-black text-xl text-blue-600 tracking-wider">1280119748</p>
-                            <p className="text-[10px] font-bold text-blue-800 uppercase tracking-widest">A/N Anggita Prima</p>
+                            <h3 className="text-xs font-bold text-blue-900">Atau Transfer ke Rekening BCA</h3>
+                            <p className="font-black text-xl text-blue-600 tracking-wider">{BCA_ACCOUNT_NUMBER}</p>
+                            <p className="text-[10px] font-bold text-blue-800 uppercase tracking-widest">A/N {BCA_ACCOUNT_NAME}</p>
                         </div>
 
                         {errorMsg && (

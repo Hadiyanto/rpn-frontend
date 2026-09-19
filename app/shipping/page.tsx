@@ -5,10 +5,11 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
 import { LuMenu, LuTruck, LuMapPin, LuSearch, LuPackage, LuCheck, LuX, LuRefreshCw, LuClipboardList } from 'react-icons/lu';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
 
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), { ssr: false });
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const ORIGIN_AREA_ID = 'IDNP11KOTA3676KEC367601'; // Rawajati, Pancoran — update this after doing area search
 
 // Default package for 1 box besar
@@ -38,7 +39,7 @@ interface OrderResult {
 
 export default function ShippingPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const userRoleData = useUserRole();
+    const userRoleData = useUserRole('shipping');
     const [step, setStep] = useState<Step>('map');
 
     // Map state
@@ -100,8 +101,7 @@ export default function ShippingPage() {
         areaDebounce.current = setTimeout(async () => {
             setAreaLoading(true);
             try {
-                const r = await fetch(`${API_URL}/api/biteship/areas?search=${encodeURIComponent(areaQuery)}`);
-                const json = await r.json();
+                const json = await fetchJson(`${API_URL}/api/biteship/areas?search=${encodeURIComponent(areaQuery)}`);
                 setAreaResults(json.data || []);
             } catch { setAreaResults([]); }
             finally { setAreaLoading(false); }
@@ -120,7 +120,7 @@ export default function ShippingPage() {
         setRatesLoading(true);
         setRates([]);
         try {
-            const r = await fetch(`${API_URL}/api/biteship/rates`, {
+            const json = await fetchJson(`${API_URL}/api/biteship/rates`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -130,7 +130,6 @@ export default function ShippingPage() {
                     items: getItems(),
                 }),
             });
-            const json = await r.json();
             if (json.status === 'ok') {
                 setRates((json.data || []).sort((a: Rate, b: Rate) => a.price - b.price));
                 setStep('rates');
@@ -148,7 +147,7 @@ export default function ShippingPage() {
         }
         setSubmitting(true);
         try {
-            const r = await fetch(`${API_URL}/api/biteship/order`, {
+            const json = await fetchJson(`${API_URL}/api/biteship/order`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -166,7 +165,6 @@ export default function ShippingPage() {
                     notes: notes || undefined,
                 }),
             });
-            const json = await r.json();
             if (json.status === 'ok') {
                 setOrderResult(json.data);
                 setStep('done');
@@ -181,8 +179,7 @@ export default function ShippingPage() {
         if (!orderResult?.id) return;
         setTracking(true);
         try {
-            const r = await fetch(`${API_URL}/api/biteship/order/${orderResult.id}`);
-            const json = await r.json();
+            const json = await fetchJson(`${API_URL}/api/biteship/order/${orderResult.id}`);
             if (json.status === 'ok') setTrackingData(json.data);
         } catch { }
         finally { setTracking(false); }
@@ -199,7 +196,7 @@ export default function ShippingPage() {
     };
 
     return (
-        <div className="bg-brand-yellow font-display text-primary min-h-screen flex flex-col">
+        <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col">
             <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
             {/* Header */}
