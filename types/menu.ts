@@ -5,6 +5,7 @@ export interface Menu {
     price: number;
     is_active: boolean;
     image_url?: string;
+    store_ids?: number[];
 }
 
 export interface Variant {
@@ -13,4 +14,5 @@ export interface Variant {
     name?: string;
     is_active: boolean;
     image_url?: string;
+    store_ids?: number[];
 }

@@ -17,6 +17,7 @@ import {
     LuCalendar,
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
+import StoreFilter from '@/components/StoreFilter';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
@@ -42,6 +43,7 @@ interface Order {
     payment_method: 'TRANSFER' | 'CASH' | null;
     created_at: string;
     items: OrderItem[];
+    store_id: number | null;
 }
 
 interface Pengeluaran {
@@ -100,6 +102,8 @@ export default function CashflowPage() {
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
     const [activeTab, setActiveTab] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
     const [showAllItems, setShowAllItems] = useState(false);
+    const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+    const [storeFilter, setStoreFilter] = useState<number | null>(null);
 
     // Bottom sheet: add expense
     const [showSheet, setShowSheet] = useState(false);
@@ -127,6 +131,12 @@ export default function CashflowPage() {
             .catch(console.error)
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => { if (json.status === 'ok') setStores(json.data); })
+            .catch(console.error);
     }, []);
 
     const submitExpense = async () => {
@@ -162,7 +172,7 @@ export default function CashflowPage() {
 
     /* ─── Data Processing ───────────────────────────────────────────── */
 
-    const doneOrders = orders.filter(o => o.status === 'DONE');
+    const doneOrders = orders.filter(o => o.status === 'DONE' && (storeFilter === null || o.store_id === storeFilter));
 
     // All unique dates from both sources
     const allDates = Array.from(new Set([
@@ -229,7 +239,7 @@ export default function CashflowPage() {
                             <LuMenu className="text-primary text-lg" />
                         </button>
                         <h1 className="text-2xl font-extrabold tracking-tight text-primary">Cash Flow</h1>
-                        <div className="w-10 h-10" />
+                        <StoreFilter stores={stores} value={storeFilter} onChange={setStoreFilter} />
                     </div>
 
                     {/* Date filter chips */}

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import WhatsAppManager from '@/components/WhatsAppManager';
-import { LuMenu, LuSettings, LuCheck, LuX, LuChevronDown, LuChevronUp, LuCalendar } from 'react-icons/lu';
+import { LuMenu, LuSettings, LuCheck, LuX, LuChevronDown, LuChevronUp, LuCalendar, LuTrash2 } from 'react-icons/lu';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useToast } from '@/hooks/useToast';
 import Toast from '@/components/Toast';
@@ -12,6 +12,11 @@ import { API_URL } from '@/utils/config';
 import type { Menu, Variant } from '@/types/menu';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+
+function getTodayStr() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
 
 export default function ConfigPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -23,7 +28,13 @@ export default function ConfigPage() {
     const [hourlyQuotas, setHourlyQuotas] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
+    const [stores, setStores] = useState<any[]>([]);
+    const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
+    const [storeForms, setStoreForms] = useState<Record<number, any>>({});
+    const [isStoreOpen, setIsStoreOpen] = useState(false);
+
     const [isQuotaOpen, setIsQuotaOpen] = useState(true);
+    const [isPastQuotaOpen, setIsPastQuotaOpen] = useState(false);
     const [isHourlyQuotaOpen, setIsHourlyQuotaOpen] = useState(true);
     const [isMenuOpen, setIsMenuOpen] = useState(true);
     const [isVariantOpen, setIsVariantOpen] = useState(true);
@@ -38,14 +49,14 @@ export default function ConfigPage() {
 
     const { toast, showToast, hideToast } = useToast();
 
-    const fetchData = async () => {
+    const fetchData = async (storeId: number) => {
         setLoading(true);
         try {
             const [mData, vData, qData, hqData] = await Promise.all([
                 fetchJson(`${API_URL}/api/menu`),
                 fetchJson(`${API_URL}/api/variants`),
-                fetchJson(`${API_URL}/api/daily-quota`),
-                fetchJson(`${API_URL}/api/hourly-quota`),
+                fetchJson(`${API_URL}/api/daily-quota?store_id=${storeId}`),
+                fetchJson(`${API_URL}/api/hourly-quota?store_id=${storeId}`),
             ]);
 
             if (mData.status === 'ok') setMenus(mData.data);
@@ -61,23 +72,24 @@ export default function ConfigPage() {
     };
 
     useEffect(() => {
-        fetchData();
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => {
+                if (json.status === 'ok') {
+                    setStores(json.data);
+                    const forms: Record<number, any> = {};
+                    json.data.forEach((s: any) => { forms[s.id] = { name: s.name, address: s.address ?? '', phone: s.phone ?? '', latitude: s.latitude ?? '', longitude: s.longitude ?? '', area_id: s.area_id ?? '' }; });
+                    setStoreForms(forms);
+                    if (json.data.length > 0) setActiveStoreId(json.data[0].id);
+                }
+            })
+            .catch(err => { console.error(err); showToast('❌ Error', 'Gagal memuat daftar store', 'error'); });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const toggleMenu = async (id: number, currentActive: boolean) => {
-        try {
-            await fetchJson(`${API_URL}/api/menu/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_active: !currentActive }),
-            });
-            fetchData();
-        } catch (e) {
-            console.error('Failed to update menu', e);
-            showToast('❌ Error', 'Gagal mengubah status menu', 'error');
-        }
-    };
+    useEffect(() => {
+        if (activeStoreId) fetchData(activeStoreId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeStoreId]);
 
     const updateMenuPrice = async (id: number, currentPrice: number, newPriceStr: string) => {
         const newPrice = parseInt(newPriceStr, 10);
@@ -89,29 +101,74 @@ export default function ConfigPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ price: newPrice }),
             });
-            fetchData();
+            if (activeStoreId) fetchData(activeStoreId);
         } catch (e) {
             console.error('Failed to update menu price', e);
             showToast('❌ Error', 'Gagal mengubah harga menu', 'error');
         }
     };
 
-    const toggleVariant = async (id: number, currentActive: boolean) => {
+    const toggleMenuStore = async (id: number, currentStoreIds: number[] = []) => {
+        if (!activeStoreId) return;
+        const newStoreIds = currentStoreIds.includes(activeStoreId)
+            ? currentStoreIds.filter(s => s !== activeStoreId)
+            : [...currentStoreIds, activeStoreId];
+        try {
+            await fetchJson(`${API_URL}/api/menu/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ store_ids: newStoreIds }),
+            });
+            if (activeStoreId) fetchData(activeStoreId);
+        } catch (e) {
+            console.error('Failed to update menu store availability', e);
+            showToast('❌ Error', 'Gagal mengubah ketersediaan store', 'error');
+        }
+    };
+
+    const toggleVariantStore = async (id: number, currentStoreIds: number[] = []) => {
+        if (!activeStoreId) return;
+        const newStoreIds = currentStoreIds.includes(activeStoreId)
+            ? currentStoreIds.filter(s => s !== activeStoreId)
+            : [...currentStoreIds, activeStoreId];
         try {
             await fetchJson(`${API_URL}/api/variants/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_active: !currentActive }),
+                body: JSON.stringify({ store_ids: newStoreIds }),
             });
-            fetchData();
+            if (activeStoreId) fetchData(activeStoreId);
         } catch (e) {
-            console.error('Failed to update variant', e);
-            showToast('❌ Error', 'Gagal mengubah status varian', 'error');
+            console.error('Failed to update variant store availability', e);
+            showToast('❌ Error', 'Gagal mengubah ketersediaan store', 'error');
+        }
+    };
+
+    const saveStore = async (id: number) => {
+        const form = storeForms[id];
+        try {
+            await fetchJson(`${API_URL}/api/stores/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: form.name,
+                    address: form.address,
+                    phone: form.phone || null,
+                    area_id: form.area_id || null,
+                    latitude: form.latitude ? Number(form.latitude) : null,
+                    longitude: form.longitude ? Number(form.longitude) : null,
+                }),
+            });
+            showToast('✅ Berhasil', 'Data store berhasil disimpan!', 'success');
+            setStores(prev => prev.map(s => s.id === id ? { ...s, ...form } : s));
+        } catch (e) {
+            console.error('Failed to update store', e);
+            showToast('❌ Error', 'Gagal menyimpan data store', 'error');
         }
     };
 
     const addQuota = async () => {
-        if (!newQuotaDate || !newQuotaQty) {
+        if (!newQuotaDate || !newQuotaQty || !activeStoreId) {
             showToast('⚠️ Peringatan', 'Pilih tanggal dan isi kuota terlebih dahulu', 'error');
             return;
         }
@@ -119,12 +176,12 @@ export default function ConfigPage() {
             const json = await fetchJson(`${API_URL}/api/daily-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: newQuotaDate, qty: parseInt(newQuotaQty, 10), hampers_qty: parseInt(newQuotaHampers || '0', 10) }),
+                body: JSON.stringify({ date: newQuotaDate, qty: parseInt(newQuotaQty, 10), hampers_qty: parseInt(newQuotaHampers || '0', 10), store_id: activeStoreId }),
             });
             if (json.status === 'ok') {
                 showToast('✅ Berhasil', 'Kuota berhasil ditambahkan!', 'success');
                 setNewQuotaDate('');
-                fetchData();
+                if (activeStoreId) fetchData(activeStoreId);
             } else {
                 showToast('❌ Gagal', json.message || 'Gagal menambah kuota', 'error');
             }
@@ -144,15 +201,27 @@ export default function ConfigPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ qty, hampers_qty }),
             });
-            fetchData();
+            if (activeStoreId) fetchData(activeStoreId);
         } catch (e) {
             console.error(e);
             showToast('❌ Error', 'Gagal mengubah kuota', 'error');
         }
     };
 
+    const deleteQuota = async (id: number) => {
+        if (!confirm('Hapus kuota tanggal ini?')) return;
+        try {
+            await fetchJson(`${API_URL}/api/daily-quota/${id}`, { method: 'DELETE' });
+            showToast('✅ Berhasil', 'Kuota berhasil dihapus', 'success');
+            if (activeStoreId) fetchData(activeStoreId);
+        } catch (e) {
+            console.error(e);
+            showToast('❌ Error', 'Gagal menghapus kuota', 'error');
+        }
+    };
+
     const addHourlyQuota = async () => {
-        if (!newHourlyTime || !newHourlyQty) {
+        if (!newHourlyTime || !newHourlyQty || !activeStoreId) {
             showToast('⚠️ Peringatan', 'Pilih jam dan isi kuota terlebih dahulu', 'error');
             return;
         }
@@ -160,12 +229,12 @@ export default function ConfigPage() {
             const json = await fetchJson(`${API_URL}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ time_str: newHourlyTime, qty: parseInt(newHourlyQty, 10), hampers_qty: parseInt(newHourlyHampers || '0', 10), is_active: true }),
+                body: JSON.stringify({ time_str: newHourlyTime, qty: parseInt(newHourlyQty, 10), hampers_qty: parseInt(newHourlyHampers || '0', 10), is_active: true, store_id: activeStoreId }),
             });
             if (json.status === 'ok') {
                 showToast('✅ Berhasil', 'Kuota Per Jam ditambahkan!', 'success');
                 // Optional: reset fields
-                fetchData();
+                if (activeStoreId) fetchData(activeStoreId);
             } else {
                 showToast('❌ Gagal', json.message || 'Gagal menambah kuota', 'error');
             }
@@ -183,9 +252,9 @@ export default function ConfigPage() {
             await fetchJson(`${API_URL}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ time_str, qty, hampers_qty, is_active }),
+                body: JSON.stringify({ time_str, qty, hampers_qty, is_active, store_id: activeStoreId }),
             });
-            fetchData();
+            if (activeStoreId) fetchData(activeStoreId);
         } catch (e) {
             console.error(e);
             showToast('❌ Error', 'Gagal mengubah kuota per jam', 'error');
@@ -197,13 +266,65 @@ export default function ConfigPage() {
             await fetchJson(`${API_URL}/api/hourly-quota`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ time_str, qty, hampers_qty, is_active: !is_active }),
+                body: JSON.stringify({ time_str, qty, hampers_qty, is_active: !is_active, store_id: activeStoreId }),
             });
-            fetchData();
+            if (activeStoreId) fetchData(activeStoreId);
         } catch (e) {
             console.error(e);
             showToast('❌ Error', 'Gagal mengubah status jam', 'error');
         }
+    };
+
+    const deleteHourlyQuota = async (id: number) => {
+        if (!confirm('Hapus slot jam ini?')) return;
+        try {
+            await fetchJson(`${API_URL}/api/hourly-quota/${id}`, { method: 'DELETE' });
+            showToast('✅ Berhasil', 'Slot jam berhasil dihapus', 'success');
+            if (activeStoreId) fetchData(activeStoreId);
+        } catch (e) {
+            console.error(e);
+            showToast('❌ Error', 'Gagal menghapus slot jam', 'error');
+        }
+    };
+
+    const todayStr = getTodayStr();
+    const upcomingQuotas = quotas.filter(q => q.date >= todayStr);
+    const pastQuotas = quotas.filter(q => q.date < todayStr);
+
+    const renderQuotaCard = (q: any) => {
+        const d = new Date(q.date);
+        const dateStr = d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+        return (
+            <div key={q.id} className="bg-white rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                <div className="flex-1">
+                    <p className="font-bold text-primary text-sm leading-tight">{dateStr}</p>
+                    <p className="text-[10px] font-black text-primary/40 leading-none mt-1">{q.date}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-primary/50">Box:</span>
+                    <input
+                        type="number"
+                        defaultValue={q.qty}
+                        onBlur={e => updateQuotaQty(q.id, q.qty, q.hampers_qty, e.target.value, String(q.hampers_qty))}
+                        className="w-14 h-8 px-2 text-center text-sm font-bold text-primary bg-primary/5 border border-primary/10 rounded-lg focus:outline-none focus:border-primary/30"
+                    />
+                    <span className="text-[10px] font-black uppercase text-primary/50 ml-1">Hmp:</span>
+                    <input
+                        type="number"
+                        defaultValue={q.hampers_qty}
+                        onBlur={e => updateQuotaQty(q.id, q.qty, q.hampers_qty, String(q.qty), e.target.value)}
+                        className="w-14 h-8 px-2 text-center text-sm font-bold text-primary bg-primary/5 border border-primary/10 rounded-lg focus:outline-none focus:border-primary/30"
+                    />
+                    <button
+                        onClick={() => deleteQuota(q.id)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                        title="Hapus kuota"
+                    >
+                        <LuTrash2 className="text-sm" />
+                    </button>
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -234,6 +355,21 @@ export default function ConfigPage() {
                             <p className="text-xs font-bold text-primary/60">Kelola Menu & Varian Tampil</p>
                         </div>
                     </div>
+                </div>
+                {/* Store tabs — quota harian & per-jam di-scope ke store yang dipilih */}
+                <div className="flex gap-2 overflow-x-auto pb-3 px-5 scrollbar-hide">
+                    {stores.map(s => (
+                        <button
+                            key={s.id}
+                            onClick={() => setActiveStoreId(s.id)}
+                            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${activeStoreId === s.id
+                                ? 'bg-primary text-brand-yellow shadow-md'
+                                : 'bg-white/60 text-primary/60 border border-primary/10'
+                                }`}
+                        >
+                            {s.name}
+                        </button>
+                    ))}
                 </div>
             </div>
 
@@ -306,34 +442,22 @@ export default function ConfigPage() {
                                 </div>
                             ) : (
                                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 animate-in fade-in slide-in-from-top-4">
-                                    {quotas.map((q) => {
-                                        const d = new Date(q.date);
-                                        const dateStr = d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
-                                        return (
-                                            <div key={q.id} className="bg-white rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                                                <div className="flex-1">
-                                                    <p className="font-bold text-primary text-sm leading-tight">{dateStr}</p>
-                                                    <p className="text-[10px] font-black text-primary/40 leading-none mt-1">{q.date}</p>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-[10px] font-black uppercase text-primary/50">Box:</span>
-                                                    <input
-                                                        type="number"
-                                                        defaultValue={q.qty}
-                                                        onBlur={e => updateQuotaQty(q.id, q.qty, q.hampers_qty, e.target.value, String(q.hampers_qty))}
-                                                        className="w-14 h-8 px-2 text-center text-sm font-bold text-primary bg-primary/5 border border-primary/10 rounded-lg focus:outline-none focus:border-primary/30"
-                                                    />
-                                                    <span className="text-[10px] font-black uppercase text-primary/50 ml-1">Hmp:</span>
-                                                    <input
-                                                        type="number"
-                                                        defaultValue={q.hampers_qty}
-                                                        onBlur={e => updateQuotaQty(q.id, q.qty, q.hampers_qty, String(q.qty), e.target.value)}
-                                                        className="w-14 h-8 px-2 text-center text-sm font-bold text-primary bg-primary/5 border border-primary/10 rounded-lg focus:outline-none focus:border-primary/30"
-                                                    />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                    {upcomingQuotas.map(renderQuotaCard)}
+                                </div>
+                            )}
+
+                            <button
+                                onClick={() => setIsPastQuotaOpen(!isPastQuotaOpen)}
+                                className="w-full flex items-center justify-between mt-4 pt-3 border-t border-primary/10 text-left"
+                            >
+                                <span className="text-xs font-black uppercase text-primary/50">
+                                    Tanggal Sudah Lewat ({pastQuotas.length})
+                                </span>
+                                {isPastQuotaOpen ? <LuChevronUp className="text-primary/50" /> : <LuChevronDown className="text-primary/50" />}
+                            </button>
+                            {isPastQuotaOpen && (
+                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mt-3 opacity-60 animate-in fade-in slide-in-from-top-4">
+                                    {pastQuotas.map(renderQuotaCard)}
                                 </div>
                             )}
                         </>
@@ -347,7 +471,7 @@ export default function ConfigPage() {
                         className="w-full text-left flex items-center justify-between border-b-2 border-primary/10 pb-2 mb-4 group"
                     >
                         <h2 className="text-lg font-bold text-primary flex items-center gap-2">
-                            Kuota Per Jam (Universal)
+                            Kuota Per Jam
                             <span className="bg-primary/10 px-2 py-0.5 rounded-full text-xs">{hourlyQuotas.length}</span>
                         </h2>
                         {isHourlyQuotaOpen ? <LuChevronUp className="text-primary/60 group-hover:text-primary transition-colors" /> : <LuChevronDown className="text-primary/60 group-hover:text-primary transition-colors" />}
@@ -438,6 +562,13 @@ export default function ConfigPage() {
                                                 >
                                                     {hq.is_active ? <LuCheck size={16} strokeWidth={3} /> : <LuX size={16} strokeWidth={3} />}
                                                 </button>
+                                                <button
+                                                    onClick={() => deleteHourlyQuota(hq.id)}
+                                                    className="w-8 h-8 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                                                    title="Hapus slot jam"
+                                                >
+                                                    <LuTrash2 className="text-sm" />
+                                                </button>
                                             </div>
                                         </div>
                                     ))}
@@ -494,16 +625,16 @@ export default function ConfigPage() {
                                                         className="w-24 px-2 py-1 text-xs font-bold text-primary bg-primary/5 border border-primary/10 rounded-lg focus:outline-none focus:border-primary/30"
                                                     />
                                                 </div>
+                                                <label className="flex items-center gap-1.5 mt-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={(m.store_ids ?? []).includes(activeStoreId ?? -1)}
+                                                        onChange={() => toggleMenuStore(m.id, m.store_ids)}
+                                                        className="w-3.5 h-3.5 rounded accent-primary"
+                                                    />
+                                                    <span className="text-[10px] font-bold text-primary/60">Tersedia di {stores.find(s => s.id === activeStoreId)?.name}</span>
+                                                </label>
                                             </div>
-                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    className="sr-only peer"
-                                                    checked={m.is_active}
-                                                    onChange={() => toggleMenu(m.id, m.is_active)}
-                                                />
-                                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
-                                            </label>
                                         </div>
                                     ))}
                                 </div>
@@ -536,22 +667,108 @@ export default function ConfigPage() {
                                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 animate-in fade-in slide-in-from-top-4">
                                     {variants.map((v) => (
                                         <div key={v.id} className="bg-white rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                                            <p className="font-bold text-primary text-xs sm:text-sm line-clamp-2 pr-4">{v.variant_name}</p>
-
-                                            <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                                                <input
-                                                    type="checkbox"
-                                                    className="sr-only peer"
-                                                    checked={v.is_active}
-                                                    onChange={() => toggleVariant(v.id, v.is_active)}
-                                                />
-                                                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
-                                            </label>
+                                            <div className="flex-1 min-w-0 pr-4">
+                                                <p className="font-bold text-primary text-xs sm:text-sm line-clamp-2">{v.variant_name}</p>
+                                                <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={(v.store_ids ?? []).includes(activeStoreId ?? -1)}
+                                                        onChange={() => toggleVariantStore(v.id, v.store_ids)}
+                                                        className="w-3.5 h-3.5 rounded accent-primary"
+                                                    />
+                                                    <span className="text-[10px] font-bold text-primary/60">Tersedia di {stores.find(s => s.id === activeStoreId)?.name}</span>
+                                                </label>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </>
+                    )}
+                </section>
+
+                {/* Kelola Store */}
+                <section>
+                    <button
+                        onClick={() => setIsStoreOpen(!isStoreOpen)}
+                        className="w-full flex items-center justify-between border-b-2 border-primary/10 pb-2 mb-4 group"
+                    >
+                        <h2 className="text-lg font-bold text-primary flex items-center gap-2">
+                            Kelola Store
+                            <span className="bg-primary/10 px-2 py-0.5 rounded-full text-xs">{stores.length}</span>
+                        </h2>
+                        {isStoreOpen ? <LuChevronUp className="text-primary/60 group-hover:text-primary transition-colors" /> : <LuChevronDown className="text-primary/60 group-hover:text-primary transition-colors" />}
+                    </button>
+
+                    {isStoreOpen && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-top-4">
+                            {stores.map(s => {
+                                const form = storeForms[s.id] ?? {};
+                                const setField = (key: string, value: string) => setStoreForms(prev => ({ ...prev, [s.id]: { ...prev[s.id], [key]: value } }));
+                                return (
+                                    <div key={s.id} className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-primary/60">Nama Store</label>
+                                            <input
+                                                value={form.name ?? ''}
+                                                onChange={e => setField('name', e.target.value)}
+                                                className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-primary/60">Alamat</label>
+                                            <textarea
+                                                rows={2}
+                                                value={form.address ?? ''}
+                                                onChange={e => setField('address', e.target.value)}
+                                                className="w-full px-3 py-2 rounded-xl border border-primary/10 bg-primary/5 text-sm font-medium text-primary focus:outline-none resize-none"
+                                            />
+                                        </div>
+                                        <div className="flex flex-wrap gap-3">
+                                            <div className="flex-1 min-w-[110px] space-y-1.5">
+                                                <label className="text-[10px] font-black uppercase text-primary/60">Telepon</label>
+                                                <input
+                                                    value={form.phone ?? ''}
+                                                    onChange={e => setField('phone', e.target.value)}
+                                                    className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                                />
+                                            </div>
+                                            <div className="w-28 space-y-1.5">
+                                                <label className="text-[10px] font-black uppercase text-primary/60">Latitude</label>
+                                                <input
+                                                    value={form.latitude ?? ''}
+                                                    onChange={e => setField('latitude', e.target.value)}
+                                                    className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                                />
+                                            </div>
+                                            <div className="w-28 space-y-1.5">
+                                                <label className="text-[10px] font-black uppercase text-primary/60">Longitude</label>
+                                                <input
+                                                    value={form.longitude ?? ''}
+                                                    onChange={e => setField('longitude', e.target.value)}
+                                                    className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-primary/60">Biteship Area ID</label>
+                                            <input
+                                                value={form.area_id ?? ''}
+                                                onChange={e => setField('area_id', e.target.value)}
+                                                placeholder="mis. IDNP6IDNC148IDND841IDZ12750"
+                                                className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={() => saveStore(s.id)}
+                                            className="h-10 px-4 bg-primary text-brand-yellow font-bold text-sm rounded-xl hover:opacity-90 transition-opacity"
+                                        >
+                                            Simpan
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     )}
                 </section>
             </div>

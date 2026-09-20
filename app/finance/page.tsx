@@ -12,6 +12,7 @@ import {
     LuClipboardList,
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
+import StoreFilter from '@/components/StoreFilter';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
@@ -33,6 +34,7 @@ interface Order {
     payment_method: 'TRANSFER' | 'CASH' | null;
     created_at: string;
     items: OrderItem[];
+    store_id: number | null;
 }
 
 // Fixed prices from menu table
@@ -85,6 +87,8 @@ export default function FinancePage() {
     const [activePayment, setActivePayment] = useState<'ALL' | 'TRANSFER' | 'CASH'>('ALL');
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [showAllOrders, setShowAllOrders] = useState(false);
+    const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+    const [storeFilter, setStoreFilter] = useState<number | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -95,7 +99,13 @@ export default function FinancePage() {
         return () => { cancelled = true; };
     }, []);
 
-    const doneOrders = orders.filter(o => o.status === 'DONE');
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => { if (json.status === 'ok') setStores(json.data); })
+            .catch(console.error);
+    }, []);
+
+    const doneOrders = orders.filter(o => o.status === 'DONE' && (storeFilter === null || o.store_id === storeFilter));
 
     // Unique dates sorted ASC
     const uniqueDates = Array.from(new Set(doneOrders.map(o => o.pickup_date))).sort();
@@ -150,7 +160,7 @@ export default function FinancePage() {
                             <LuMenu className="text-primary text-lg" />
                         </button>
                         <h1 className="text-2xl font-extrabold tracking-tight text-primary">Finance</h1>
-                        <div className="w-10 h-10" />
+                        <StoreFilter stores={stores} value={storeFilter} onChange={setStoreFilter} />
                     </div>
 
                     {/* Date filter chips */}

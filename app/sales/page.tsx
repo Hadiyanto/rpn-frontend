@@ -10,6 +10,7 @@ import {
     LuChartBar,
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
+import StoreFilter from '@/components/StoreFilter';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
@@ -30,6 +31,7 @@ interface Order {
     status: 'PENDING' | 'CONFIRMED' | 'DONE' | 'CANCELLED';
     created_at: string;
     items: OrderItem[];
+    store_id: number | null;
 }
 
 function getTodayStr() {
@@ -51,6 +53,8 @@ export default function SalesAnalyticsPage() {
     const [rangeStart, setRangeStart] = useState<string | null>(getTodayStr());
     const [rangeEnd, setRangeEnd] = useState<string | null>(null);
     const [activeStatus, setActiveStatus] = useState<string>('ALL');
+    const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+    const [storeFilter, setStoreFilter] = useState<number | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -60,6 +64,14 @@ export default function SalesAnalyticsPage() {
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
     }, []);
+
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => { if (json.status === 'ok') setStores(json.data); })
+            .catch(console.error);
+    }, []);
+
+    const visibleOrders = storeFilter === null ? orders : orders.filter(o => o.store_id === storeFilter);
 
     const handleDateChip = (date: string) => {
         if (!rangeStart || (rangeStart && rangeEnd)) {
@@ -81,9 +93,9 @@ export default function SalesAnalyticsPage() {
         }
     };
 
-    const availableDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort();
+    const availableDates = Array.from(new Set(visibleOrders.map(o => o.pickup_date))).sort();
     const effectiveEnd = rangeEnd ?? rangeStart;
-    const dayOrders = orders.filter(o => {
+    const dayOrders = visibleOrders.filter(o => {
         const matchDate = !rangeStart || (o.pickup_date >= rangeStart && o.pickup_date <= (effectiveEnd ?? rangeStart));
         const matchStatus = activeStatus === 'ALL' || o.status === activeStatus;
         return matchDate && matchStatus;
@@ -114,7 +126,7 @@ export default function SalesAnalyticsPage() {
 
     // Chart: total orders per date — ikut filter status
     const ordersByDate: Record<string, number> = {};
-    orders
+    visibleOrders
         .filter(o => activeStatus === 'ALL' || o.status === activeStatus)
         .forEach(o => {
             ordersByDate[o.pickup_date] = (ordersByDate[o.pickup_date] ?? 0) + 1;
@@ -144,7 +156,7 @@ export default function SalesAnalyticsPage() {
                             <LuMenu className="text-primary text-lg" />
                         </button>
                         <h1 className="text-2xl font-extrabold tracking-tight text-primary">Sales</h1>
-                        <div className="w-10 h-10" />
+                        <StoreFilter stores={stores} value={storeFilter} onChange={setStoreFilter} />
                     </div>
                 </header>
 

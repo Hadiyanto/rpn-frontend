@@ -30,6 +30,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { printOrder } from '@/utils/printer';
 import { subscribePush } from '@/utils/push';
 import Sidebar from '@/components/Sidebar';
+import StoreFilter from '@/components/StoreFilter';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
@@ -53,6 +54,7 @@ interface Order {
     transfer_img_url: string | null;
     created_at: string;
     items: OrderItem[];
+    store_id: number | null;
 }
 
 const DAY_ID: Record<number, string> = {
@@ -142,6 +144,8 @@ export default function OrdersPage() {
     const [printingId, setPrintingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [showSidebar, setShowSidebar] = useState(false);
+    const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+    const [storeFilter, setStoreFilter] = useState<number | null>(null);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const userRoleData = useUserRole('orders');
     const [seenOrderCount, setSeenOrderCount] = useState<number>(() => {
@@ -495,6 +499,12 @@ export default function OrdersPage() {
         subscribePush().catch(console.error);
     }, []);
 
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => { if (json.status === 'ok') setStores(json.data); })
+            .catch(console.error);
+    }, []);
+
     // Unique pickup dates from orders, sorted ASC
     const uniqueDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort();
 
@@ -509,7 +519,9 @@ export default function OrdersPage() {
 
         const matchStatus = activeTab === 'ALL' ? true : order.status === activeTab;
 
-        return matchSearch && matchDate && matchStatus;
+        const matchStore = storeFilter === null ? true : order.store_id === storeFilter;
+
+        return matchSearch && matchDate && matchStatus && matchStore;
     }).sort((a, b) => {
         const dateCompare = a.pickup_date.localeCompare(b.pickup_date);
         if (dateCompare !== 0) return dateCompare;
@@ -533,6 +545,8 @@ export default function OrdersPage() {
                             <LuMenu className="text-primary text-lg" />
                         </button>
                         <h1 className="text-2xl font-extrabold tracking-tight text-primary">Orders</h1>
+                        <div className="flex items-center gap-2">
+                        <StoreFilter stores={stores} value={storeFilter} onChange={setStoreFilter} />
                         <div className="relative">
                             <button
                                 onClick={toggleBell}
@@ -590,6 +604,7 @@ export default function OrdersPage() {
                                     </div>
                                 </>
                             )}
+                        </div>
                         </div>
                     </div>
 

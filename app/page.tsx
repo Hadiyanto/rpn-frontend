@@ -38,9 +38,10 @@ interface OrderItem {
 }
 
 type DeliveryMethod = 'pickup' | 'customer_delivery' | 'store_delivery';
-type Step = 'info' | 'menu' | 'review' | 'payment';
+type Step = 'store' | 'info' | 'menu' | 'review' | 'payment';
 
 const STEP_TITLES: Record<Step, string> = {
+    store: 'Pilih Store',
     info: 'Detail Pesanan',
     menu: 'Pilih Menu',
     review: 'Review Pesanan',
@@ -94,7 +95,9 @@ function StepHeader({ title, onBack }: { title: string; onBack?: () => void }) {
 export default function OrderPage() {
     const [submitting, setSubmitting] = useState(false);
     const [submittedOrder, setSubmittedOrder] = useState<any>(null);
-    const [step, setStep] = useState<Step>('info');
+    const [step, setStep] = useState<Step>('store');
+    const [stores, setStores] = useState<any[]>([]);
+    const [selectedStore, setSelectedStore] = useState<any>(null);
     const [errorMessage, setErrorMessage] = useState('');
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -136,13 +139,24 @@ export default function OrderPage() {
     const [quotasLoading, setQuotasLoading] = useState(true);
     const [availableHours, setAvailableHours] = useState<any[]>([]);
 
+    // Fetch store list once on mount — customer picks a store before anything else
     useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => { if (json.status === 'ok') setStores(json.data); })
+            .catch(err => {
+                console.error(err);
+                showToast('❌ Error', 'Gagal memuat daftar store.', 'error');
+            });
+    }, []);
+
+    useEffect(() => {
+        if (!selectedStore) return;
         let cancelled = false;
         setQuotasLoading(true);
         Promise.all([
-            fetchJson(`${API_URL}/api/menu`),
-            fetchJson(`${API_URL}/api/variants`),
-            fetchJson(`${API_URL}/api/daily-quota`),
+            fetchJson(`${API_URL}/api/menu?store_id=${selectedStore.id}`),
+            fetchJson(`${API_URL}/api/variants?store_id=${selectedStore.id}`),
+            fetchJson(`${API_URL}/api/daily-quota?store_id=${selectedStore.id}`),
         ]).then(([mjson, vjson, qjson]) => {
             if (cancelled) return;
             if (mjson.status === 'ok') setMenus(mjson.data);
@@ -153,16 +167,16 @@ export default function OrderPage() {
             if (!cancelled) showToast('❌ Error', 'Gagal memuat menu. Silakan refresh halaman.', 'error');
         }).finally(() => { if (!cancelled) setQuotasLoading(false); });
         return () => { cancelled = true; };
-    }, []);
+    }, [selectedStore]);
 
     useEffect(() => {
-        if (!form.pickup_date) { setAvailableHours([]); return; }
+        if (!form.pickup_date || !selectedStore) { setAvailableHours([]); return; }
         let cancelled = false;
-        fetchJson(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
+        fetchJson(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}&store_id=${selectedStore.id}`)
             .then(json => { if (!cancelled && json.status === 'ok') setAvailableHours(json.data); })
             .catch(console.error);
         return () => { cancelled = true; };
-    }, [form.pickup_date]);
+    }, [form.pickup_date, selectedStore]);
 
     // Reverse geocode when pin dropped — fills address, extracts postal_code, auto-searches Biteship area
     const onMapClick = useCallback(async (lat: number, lng: number) => {
@@ -235,7 +249,7 @@ export default function OrderPage() {
             setShippingLoading(true);
             try {
                 const payload = {
-                    origin_longitude: 106.854106, // RPN store
+                    store_id: selectedStore?.id,
                     destination_latitude: destLat,
                     destination_longitude: destLng,
                     couriers: 'gosend,grab,gojek,lalamove,paxel,borzo,sicepat,anteraja', // Request multiple couriers for instantaneous and same-day coverage
@@ -342,6 +356,7 @@ export default function OrderPage() {
 
     const submitOrder = async () => {
         setErrorMessage('');
+        if (!selectedStore) return fail('Store belum dipilih');
         if (!form.payment_method) return fail('Metode pembayaran wajib dipilih');
         setSubmitting(true);
         try {
@@ -354,6 +369,7 @@ export default function OrderPage() {
 
             const payload = {
                 ...form,
+                store_id: selectedStore?.id,
                 note: noteStr,
                 pesanan: validItems,
                 delivery_method: deliveryMethod,
@@ -473,7 +489,7 @@ export default function OrderPage() {
 
                 <StepHeader
                     title={STEP_TITLES[step]}
-                    onBack={step === 'menu' ? () => goToStep('info') : step === 'review' ? () => goToStep('menu') : step === 'payment' ? () => goToStep('review') : undefined}
+                    onBack={step === 'info' ? () => goToStep('store') : step === 'menu' ? () => goToStep('info') : step === 'review' ? () => goToStep('menu') : step === 'payment' ? () => goToStep('review') : undefined}
                 />
 
                 <div className="flex-1 px-5 py-6 space-y-6">
@@ -481,6 +497,31 @@ export default function OrderPage() {
                     {errorMessage && (
                         <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm font-semibold animate-in fade-in slide-in-from-top-2">
                             {errorMessage}
+                        </div>
+                    )}
+
+                    {step === 'store' && (
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Pilih Lokasi Store *</label>
+                            {stores.length === 0 && (
+                                <p className="text-xs text-primary/50 font-medium text-center py-6">Memuat daftar store...</p>
+                            )}
+                            {stores.map((s) => {
+                                const isSelected = selectedStore?.id === s.id;
+                                return (
+                                    <button key={s.id} onClick={() => setSelectedStore(s)}
+                                        className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all ${isSelected ? 'border-primary bg-primary text-brand-yellow' : 'border-primary/10 bg-primary/5 text-primary hover:border-primary/30'}`}>
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isSelected ? 'bg-brand-yellow/20' : 'bg-white/70'}`}>
+                                            <LuStore className={`text-lg ${isSelected ? 'text-brand-yellow' : 'text-primary/60'}`} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-sm font-extrabold ${isSelected ? 'text-brand-yellow' : 'text-primary'}`}>{s.name}</p>
+                                            <p className={`text-xs font-medium line-clamp-2 ${isSelected ? 'text-brand-yellow/70' : 'text-primary/50'}`}>{s.address}</p>
+                                        </div>
+                                        {isSelected && <LuCheck className="text-brand-yellow shrink-0" />}
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
 
@@ -943,6 +984,12 @@ export default function OrderPage() {
 
                 {/* Footer per step */}
                 <div className="px-5 py-5 border-t border-primary/10 bg-white sm:rounded-b-3xl mt-auto">
+                    {step === 'store' && (
+                        <button onClick={() => selectedStore ? goToStep('info') : fail('Silakan pilih store terlebih dahulu')} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
+                            <span>Lanjut</span>
+                            <LuArrowRight />
+                        </button>
+                    )}
                     {step === 'info' && (
                         <button onClick={handleNextFromInfo} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
                             <span>Lanjut ke Pilihan Menu</span>
