@@ -77,7 +77,7 @@ export default function ConfigPage() {
                 if (json.status === 'ok') {
                     setStores(json.data);
                     const forms: Record<number, any> = {};
-                    json.data.forEach((s: any) => { forms[s.id] = { name: s.name, address: s.address ?? '', phone: s.phone ?? '', latitude: s.latitude ?? '', longitude: s.longitude ?? '', area_id: s.area_id ?? '' }; });
+                    json.data.forEach((s: any) => { forms[s.id] = { name: s.name, address: s.address ?? '', phone: s.phone ?? '', latitude: s.latitude ?? '', longitude: s.longitude ?? '', area_id: s.area_id ?? '', open_time: s.open_time ?? '11:00' }; });
                     setStoreForms(forms);
                     if (json.data.length > 0) setActiveStoreId(json.data[0].id);
                 }
@@ -157,6 +157,7 @@ export default function ConfigPage() {
                     area_id: form.area_id || null,
                     latitude: form.latitude ? Number(form.latitude) : null,
                     longitude: form.longitude ? Number(form.longitude) : null,
+                    open_time: form.open_time || '11:00',
                 }),
             });
             showToast('✅ Berhasil', 'Data store berhasil disimpan!', 'success');
@@ -756,6 +757,15 @@ export default function ConfigPage() {
                                                 value={form.area_id ?? ''}
                                                 onChange={e => setField('area_id', e.target.value)}
                                                 placeholder="mis. IDNP6IDNC148IDND841IDZ12750"
+                                                className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                            />
+                                        </div>
+                                        <div className="w-28 space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-primary/60">Jam Buka</label>
+                                            <input
+                                                type="time"
+                                                value={form.open_time || '11:00'}
+                                                onChange={e => setField('open_time', e.target.value)}
                                                 className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
                                             />
                                         </div>

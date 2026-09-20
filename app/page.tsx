@@ -137,7 +137,6 @@ export default function OrderPage() {
     const [variants, setVariants] = useState<Variant[]>([]);
     const [quotas, setQuotas] = useState<any[]>([]);
     const [quotasLoading, setQuotasLoading] = useState(true);
-    const [availableHours, setAvailableHours] = useState<any[]>([]);
 
     // Fetch store list once on mount — customer picks a store before anything else
     useEffect(() => {
@@ -168,15 +167,6 @@ export default function OrderPage() {
         }).finally(() => { if (!cancelled) setQuotasLoading(false); });
         return () => { cancelled = true; };
     }, [selectedStore]);
-
-    useEffect(() => {
-        if (!form.pickup_date || !selectedStore) { setAvailableHours([]); return; }
-        let cancelled = false;
-        fetchJson(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}&store_id=${selectedStore.id}`)
-            .then(json => { if (!cancelled && json.status === 'ok') setAvailableHours(json.data); })
-            .catch(console.error);
-        return () => { cancelled = true; };
-    }, [form.pickup_date, selectedStore]);
 
     // Reverse geocode when pin dropped — fills address, extracts postal_code, auto-searches Biteship area
     const onMapClick = useCallback(async (lat: number, lng: number) => {
@@ -317,17 +307,10 @@ export default function OrderPage() {
     };
 
     const getIsHourAvailable = (hStr: string) => {
-        if (!form.pickup_date) return false;
-        const hq = availableHours.find(h => h.time_str === hStr && h.is_active);
-        if (!hq) return false;
-        let requestedBox = 0, requestedHampers = 0;
-        form.pesanan.forEach(item => {
-            if (!item.name) return;
-            if (item.box_type === 'HALF') requestedBox += item.qty * 0.5;
-            else if (item.box_type === 'FULL') requestedBox += item.qty;
-            else if (item.box_type === 'HAMPERS') requestedHampers += item.qty;
-        });
-        return hq.remaining_qty >= requestedBox && hq.remaining_hampers_qty >= requestedHampers;
+        if (!form.pickup_date || !selectedStore) return false;
+        // Kuota per jam divalidasi di server saat submit order (bisa full walau jam ini available).
+        // Di sini hanya cek jam tersebut sudah lewat jam buka store atau belum.
+        return hStr >= (selectedStore.open_time ?? '00:00');
     };
 
     const goToStep = (s: Step) => { setErrorMessage(''); setStep(s); window.scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -483,8 +466,8 @@ export default function OrderPage() {
     }
 
     return (
-        <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col items-center p-0 sm:p-4 sm:py-8">
-            <div className="relative bg-white rounded-none sm:rounded-[28px] flex flex-col w-full max-w-[480px] min-h-screen sm:min-h-fit shadow-2xl">
+        <div className="bg-brand-white font-display text-primary min-h-dvh flex flex-col items-center p-0 sm:p-4 sm:py-8">
+            <div className="relative bg-white rounded-none sm:rounded-[28px] flex flex-col w-full max-w-[480px] min-h-dvh sm:min-h-fit shadow-2xl">
                 <div className="w-12 h-1 bg-primary/10 rounded-full mx-auto mt-3 sm:mt-4" />
 
                 <StepHeader
