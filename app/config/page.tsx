@@ -11,6 +11,7 @@ import Toast from '@/components/Toast';
 import SetupChecklist from '@/components/config/SetupChecklist';
 import MenuBoxManager from '@/components/config/MenuBoxManager';
 import VariantManager from '@/components/config/VariantManager';
+import AvailabilityManager from '@/components/config/AvailabilityManager';
 import QuotaManager, { type DailyQuota, type HourlyQuota } from '@/components/config/QuotaManager';
 import StoreSettings from '@/components/config/StoreSettings';
 import type { StockItem } from '@/components/VariantRecipeEditor';
@@ -25,6 +26,7 @@ const TABS = [
     { key: 'setup', label: 'Setup' },
     { key: 'menu', label: 'Menu box' },
     { key: 'varian', label: 'Varian & resep' },
+    { key: 'tersedia', label: 'Ketersediaan' },
     { key: 'kuota', label: 'Kuota' },
     { key: 'store', label: 'Store' },
 ] as const;
@@ -50,6 +52,14 @@ export default function ConfigPage() {
     // Bumped after every change so the setup checklist re-reads its status.
     const [version, setVersion] = useState(0);
     const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+    // Set by "Buat resep di …" in the availability tab: open that flavor in the recipe tab.
+    const [focusVariantId, setFocusVariantId] = useState<number | null>(null);
+
+    const openRecipe = (variantId: number, storeId: number) => {
+        setActiveStoreId(storeId);
+        setFocusVariantId(variantId);
+        selectTab('varian');
+    };
 
     // Keep the active tab chip visible in the horizontally scrolling tab row (phones).
     useEffect(() => {
@@ -167,7 +177,8 @@ export default function ConfigPage() {
                     <>
                         {tab === 'setup' && <SetupChecklist storeId={activeStore.id} storeName={activeStore.name} refreshKey={version} onNavigate={navigate} />}
                         {tab === 'menu' && <MenuBoxManager menus={menus} stores={stores} onChanged={refresh} notify={notify} />}
-                        {tab === 'varian' && <VariantManager variants={variants} stores={stores} stocks={stocks} activeStoreId={activeStore.id} onChanged={refresh} notify={notify} />}
+                        {tab === 'varian' && <VariantManager variants={variants} stores={stores} stocks={stocks} activeStoreId={activeStore.id} onChanged={refresh} notify={notify} focusVariantId={focusVariantId} onFocusHandled={() => setFocusVariantId(null)} />}
+                        {tab === 'tersedia' && <AvailabilityManager variants={variants} stores={stores} onChanged={refresh} onOpenRecipe={openRecipe} notify={notify} />}
                         {tab === 'kuota' && <QuotaManager key={activeStore.id} store={activeStore} quotas={quotas} hourlyQuotas={hourlyQuotas} onChanged={refresh} notify={notify} />}
                         {tab === 'store' && <StoreSettings store={activeStore} onSaved={() => { loadStores(); refresh(); }} notify={notify} />}
                     </>

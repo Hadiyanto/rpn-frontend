@@ -25,7 +25,10 @@ export interface Variant {
     name?: string;
     is_active: boolean;
     image_url?: string;
+    /** Stores where the flavor is sold. Only stores in `recipe_store_ids` are allowed. */
     store_ids?: number[];
+    /** Stores that have a recipe for this flavor. */
+    recipe_store_ids?: number[];
 }
 
 export interface Store {

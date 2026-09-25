@@ -92,10 +92,10 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
             const json = await fetchJson(`${API_URL}/api/variant-recipe/copy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ from_store_id: storeId, to_store_id: target.id, variant_ids: [variant.id] }),
+                body: JSON.stringify({ from_store_id: storeId, to_store_id: target.id, variant_ids: [variant.id], make_available: true }),
             });
             const created: string[] = json.data.created_stock ?? [];
-            onNotify('✅ Disalin', `Resep ${variant.variant_name} disalin ke ${target.name}${created.length ? `. Bahan baru (stok 0): ${created.join(', ')}` : ''}`, 'success');
+            onNotify('✅ Disalin', `Resep ${variant.variant_name} disalin ke ${target.name} dan langsung dijual${created.length ? `. Bahan baru (stok 0): ${created.join(', ')}` : ''}`, 'success');
             setCopyTarget(null);
             onSaved?.();
         } catch (e) {
@@ -252,7 +252,7 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                 <div className="pt-3 border-t border-primary/10 space-y-2">
                     {copyTarget ? (
                         <ConfirmBar
-                            message={`Resep ${variant.variant_name} di ${copyTarget.name} akan diganti dengan resep ini. Bahan yang belum ada di sana dibuat dengan stok 0.`}
+                            message={`Resep ${variant.variant_name} disalin ke ${copyTarget.name} (resep lama di sana diganti) dan rasa ini langsung dijual di ${copyTarget.name}. Bahan yang belum ada dibuat dengan stok 0.`}
                             confirmLabel="Salin"
                             busy={copying}
                             onConfirm={() => copyToStore(copyTarget)}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LuCopy, LuImagePlus, LuPlus, LuSearch, LuTrash2, LuX } from 'react-icons/lu';
 import type { Store, Variant } from '@/types/menu';
 import { fetchJson } from '@/utils/fetchJson';
@@ -17,20 +17,22 @@ interface Draft {
     variant_name: string;
     image_url: string;
     is_active: boolean;
-    store_ids: number[];
 }
 
 /**
  * Flavors (Choco, Choco Cheese, Vanila, …): create, edit, (de)activate, delete, and the
  * per-store recipe with its HPP. Each flavor has its own recipe; a Box Besar may mix up to 3.
  */
-export default function VariantManager({ variants, stores, stocks, activeStoreId, onChanged, notify }: {
+export default function VariantManager({ variants, stores, stocks, activeStoreId, onChanged, notify, focusVariantId, onFocusHandled }: {
     variants: Variant[];
     stores: Store[];
     stocks: StockItem[];
     activeStoreId: number;
     onChanged: () => void;
     notify: Notify;
+    /** Open this flavor's editor (e.g. "Buat resep di Depok" from the availability tab). */
+    focusVariantId?: number | null;
+    onFocusHandled?: () => void;
 }) {
     const [query, setQuery] = useState('');
     const [showInactive, setShowInactive] = useState(true);
@@ -40,28 +42,41 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
     const [busy, setBusy] = useState(false);
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
-    const [bulkTarget, setBulkTarget] = useState<Store | null>(null);
-    const [bulkBusy, setBulkBusy] = useState(false);
     const otherStores = stores.filter(s => s.id !== activeStoreId);
     const shortNames = shortStoreNames(stores);
 
-    // Copy every saved recipe of the selected store to another store.
-    const copyAll = async (target: Store) => {
-        setBulkBusy(true);
+    // "Salin resep" panel: copy the chosen flavors' recipes from this store to another store.
+    const [copyOpen, setCopyOpen] = useState(false);
+    const [copyTargetId, setCopyTargetId] = useState<number | null>(null);
+    const [copyIds, setCopyIds] = useState<number[]>([]);
+    const [copyAndSell, setCopyAndSell] = useState(true);
+    const [copyBusy, setCopyBusy] = useState(false);
+    const withRecipeHere = variants.filter(v => (v.recipe_store_ids ?? []).includes(activeStoreId));
+
+    const openCopy = () => {
+        setCopyOpen(true);
+        setCopyTargetId(otherStores[0]?.id ?? null);
+        setCopyIds(withRecipeHere.map(v => v.id));
+    };
+
+    const submitCopy = async () => {
+        const target = stores.find(s => s.id === copyTargetId);
+        if (!target || copyIds.length === 0) return;
+        setCopyBusy(true);
         try {
             const json = await fetchJson(`${API_URL}/api/variant-recipe/copy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ from_store_id: activeStoreId, to_store_id: target.id }),
+                body: JSON.stringify({ from_store_id: activeStoreId, to_store_id: target.id, variant_ids: copyIds, make_available: copyAndSell }),
             });
             const created: string[] = json.data.created_stock ?? [];
-            notify('✅ Disalin', `${json.data.copied_variants} resep disalin ke ${target.name}${created.length ? `. Bahan baru (stok 0): ${created.join(', ')}` : ''}`, 'success');
-            setBulkTarget(null);
+            notify('✅ Disalin', `${json.data.copied_variants} resep disalin ke ${target.name}${copyAndSell ? ' dan langsung dijual' : ''}${created.length ? `. Bahan baru (stok 0): ${created.join(', ')}` : ''}`, 'success');
+            setCopyOpen(false);
             onChanged();
         } catch (e) {
             notify('❌ Gagal', e instanceof Error ? e.message : 'Gagal menyalin resep', 'error');
         } finally {
-            setBulkBusy(false);
+            setCopyBusy(false);
         }
     };
 
@@ -74,6 +89,14 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
     }, [variants, query, showInactive]);
     const selected = variants.find(v => v.id === selectedId) ?? null;
 
+    useEffect(() => {
+        if (focusVariantId == null) return;
+        const v = variants.find(x => x.id === focusVariantId);
+        if (v) openEdit(v);
+        onFocusHandled?.();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusVariantId]);
+
     // On phones the detail replaces the list, so start it at the top of the screen.
     const scrollTopOnPhone = () => {
         if (window.matchMedia('(max-width: 1023px)').matches) window.scrollTo({ top: 0 });
@@ -83,13 +106,13 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
         scrollTopOnPhone();
         setSelectedId(null);
         setConfirmDelete(false);
-        setDraft({ id: null, variant_name: '', image_url: '', is_active: true, store_ids: stores.map(s => s.id) });
+        setDraft({ id: null, variant_name: '', image_url: '', is_active: true });
     };
     const openEdit = (v: Variant) => {
         scrollTopOnPhone();
         setSelectedId(v.id);
         setConfirmDelete(false);
-        setDraft({ id: v.id, variant_name: v.variant_name, image_url: v.image_url ?? '', is_active: v.is_active !== false, store_ids: v.store_ids ?? [] });
+        setDraft({ id: v.id, variant_name: v.variant_name, image_url: v.image_url ?? '', is_active: v.is_active !== false });
     };
     const close = () => { setDraft(null); setSelectedId(null); setConfirmDelete(false); };
 
@@ -111,7 +134,7 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
         if (!draft) return;
         setBusy(true);
         try {
-            const body = JSON.stringify({ variant_name: draft.variant_name, image_url: draft.image_url || null, is_active: draft.is_active, store_ids: draft.store_ids });
+            const body = JSON.stringify({ variant_name: draft.variant_name, image_url: draft.image_url || null, is_active: draft.is_active });
             const json = draft.id
                 ? await fetchJson(`${API_URL}/api/variants/${draft.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body })
                 : await fetchJson(`${API_URL}/api/variants`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
@@ -152,25 +175,67 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
                 description="Setiap rasa punya resepnya sendiri (misalnya Choco Cheese bukan campuran Choco + Cheese). Resep dan HPP berlaku per store."
                 action={
                     <div className="flex flex-wrap gap-2">
-                        {otherStores.map(s => (
-                            <button key={s.id} type="button" className={buttonSecondary} onClick={() => setBulkTarget(s)} title={`Salin semua resep ${activeStore?.name ?? ''} ke ${s.name}`}>
-                                <LuCopy /> Salin semua resep ke {shortNames[s.id]}
-                            </button>
-                        ))}
+                        {otherStores.length > 0 && withRecipeHere.length > 0 && (
+                            <button type="button" className={buttonSecondary} onClick={openCopy}><LuCopy /> Salin resep ke store lain</button>
+                        )}
                         <button type="button" className={buttonPrimary} onClick={openNew}><LuPlus /> Tambah rasa</button>
                     </div>
                 }
             />
-            {bulkTarget && (
-                <div className="mt-3">
-                    <ConfirmBar
-                        message={`Semua resep ${activeStore?.name ?? ''} disalin ke ${bulkTarget.name}. Resep rasa yang sama di ${bulkTarget.name} akan diganti, dan bahan yang belum ada dibuat dengan stok 0.`}
-                        confirmLabel="Salin semua"
-                        busy={bulkBusy}
-                        onConfirm={() => copyAll(bulkTarget)}
-                        onCancel={() => setBulkTarget(null)}
-                    />
-                </div>
+            {copyOpen && (
+                <Card className="mt-3 space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <h3 className="text-sm font-extrabold text-primary">Salin resep dari {activeStore?.name}</h3>
+                            <p className="text-xs text-primary/60">Resep rasa yang sama di store tujuan diganti. Bahan yang belum ada dibuat dengan stok 0.</p>
+                        </div>
+                        <button type="button" onClick={() => setCopyOpen(false)} className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-primary/5 text-primary/60" aria-label="Tutup"><LuX /></button>
+                    </div>
+                    <div className="space-y-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-primary/60">Ke store</span>
+                        <div className="flex flex-wrap gap-2">
+                            {otherStores.map(s => (
+                                <button key={s.id} type="button" onClick={() => setCopyTargetId(s.id)}
+                                    className={`h-10 px-4 rounded-full text-sm font-bold border transition-colors ${copyTargetId === s.id ? 'bg-primary text-brand-yellow border-primary' : 'bg-white text-primary/60 border-primary/15'}`}>
+                                    {shortNames[s.id]}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-primary/60">Rasa ({copyIds.length}/{withRecipeHere.length})</span>
+                            <div className="flex gap-3 text-xs font-bold">
+                                <button type="button" className="text-primary hover:underline" onClick={() => setCopyIds(withRecipeHere.map(v => v.id))}>Pilih semua</button>
+                                <button type="button" className="text-primary/60 hover:underline" onClick={() => setCopyIds([])}>Kosongkan</button>
+                            </div>
+                        </div>
+                        <div className="grid gap-1.5 sm:grid-cols-2">
+                            {withRecipeHere.map(v => {
+                                const checked = copyIds.includes(v.id);
+                                const hasAtTarget = copyTargetId != null && (v.recipe_store_ids ?? []).includes(copyTargetId);
+                                return (
+                                    <label key={v.id} className={`flex items-center gap-2.5 h-11 px-3 rounded-xl border cursor-pointer ${checked ? 'border-primary/40 bg-primary/5' : 'border-primary/10'}`}>
+                                        <input type="checkbox" className="w-4 h-4 accent-primary" checked={checked}
+                                            onChange={e => setCopyIds(ids => e.target.checked ? [...ids, v.id] : ids.filter(id => id !== v.id))} />
+                                        <span className="text-sm font-semibold text-primary flex-1 truncate">{v.variant_name}</span>
+                                        {hasAtTarget && <span className="text-[11px] font-bold text-amber-700">akan diganti</span>}
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm font-semibold text-primary">
+                        <input type="checkbox" className="w-4 h-4 accent-primary" checked={copyAndSell} onChange={e => setCopyAndSell(e.target.checked)} />
+                        Langsung jual rasa ini di store tujuan
+                    </label>
+                    <div className="flex flex-wrap gap-2 justify-end">
+                        <button type="button" className={`${buttonSecondary} flex-1 sm:flex-none`} onClick={() => setCopyOpen(false)}>Batal</button>
+                        <button type="button" className={`${buttonPrimary} flex-1 sm:flex-none`} disabled={copyBusy || copyIds.length === 0 || copyTargetId == null} onClick={submitCopy}>
+                            {copyBusy ? 'Menyalin…' : `Salin ${copyIds.length} resep`}
+                        </button>
+                    </div>
+                </Card>
             )}
             </div>
 
@@ -202,9 +267,17 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
                                                 : <span className="w-10 h-10 rounded-lg bg-primary/5 shrink-0" />}
                                             <span className="flex-1 min-w-0">
                                                 <span className={`block text-sm font-bold truncate ${v.is_active ? 'text-primary' : 'text-primary/40 line-through'}`}>{v.variant_name}</span>
-                                                <span className="block text-xs text-primary/50 truncate">{stores.filter(s => (v.store_ids ?? []).includes(s.id)).map(s => s.name).join(', ') || 'Tidak dijual di store mana pun'}</span>
+                                                <span className="block text-xs text-primary/50 truncate">
+                                                    {(v.recipe_store_ids ?? []).length === 0
+                                                        ? 'Belum ada resep'
+                                                        : `Resep: ${stores.filter(s => (v.recipe_store_ids ?? []).includes(s.id)).map(s => shortNames[s.id]).join(', ')}`}
+                                                </span>
                                             </span>
-                                            {!v.is_active ? <StatusPill state="off">Nonaktif</StatusPill> : !inStore && <StatusPill state="partial">Tidak di {activeStore?.name}</StatusPill>}
+                                            {!v.is_active
+                                                ? <StatusPill state="off">Nonaktif</StatusPill>
+                                                : !(v.recipe_store_ids ?? []).includes(activeStoreId)
+                                                    ? <StatusPill state="todo">Belum ada resep di {shortNames[activeStoreId]}</StatusPill>
+                                                    : !inStore && <StatusPill state="partial">Belum dijual</StatusPill>}
                                         </button>
                                     </li>
                                 );
@@ -239,20 +312,6 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
                                 <Field label="Nama rasa">
                                     <input id="variant-name" className={inputClass} value={draft.variant_name} onChange={e => setDraft({ ...draft, variant_name: e.target.value })} placeholder="mis. Choco Cheese" />
                                 </Field>
-                                <div className="space-y-2">
-                                    <span className="text-[11px] font-bold uppercase tracking-wider text-primary/60">Dijual di</span>
-                                    <div className="flex flex-wrap gap-2">
-                                        {stores.map(s => {
-                                            const on = draft.store_ids.includes(s.id);
-                                            return (
-                                                <button key={s.id} type="button" onClick={() => setDraft({ ...draft, store_ids: on ? draft.store_ids.filter(id => id !== s.id) : [...draft.store_ids, s.id] })}
-                                                    className={`px-4 py-2 sm:px-3 sm:py-1.5 rounded-full text-sm sm:text-xs font-bold border transition-colors ${on ? 'bg-primary text-brand-yellow border-primary' : 'bg-white text-primary/60 border-primary/15'}`}>
-                                                    {s.name}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
                                 <label className="flex items-center gap-2 text-sm font-semibold text-primary">
                                     <input type="checkbox" className="w-4 h-4 accent-primary" checked={draft.is_active} onChange={e => setDraft({ ...draft, is_active: e.target.checked })} />
                                     Aktif (bisa dipilih pelanggan)
