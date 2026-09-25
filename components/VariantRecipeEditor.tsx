@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LuPlus, LuTrash2 } from 'react-icons/lu';
-import type { Variant } from '@/types/menu';
+import { LuCopy, LuPlus, LuTrash2 } from 'react-icons/lu';
+import type { Store, Variant } from '@/types/menu';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 import { formatRupiah } from '@/utils/format';
-import { buttonPrimary, buttonSecondary, inputClass } from './config/ui';
+import { ConfirmBar, buttonPrimary, buttonSecondary, inputClass } from './config/ui';
+import { shortStoreNames } from './StoreSwitcher';
 
 export interface StockItem {
     id: number;
@@ -28,10 +29,14 @@ interface HppResult {
     missing_price: number[];
 }
 
+type Suggestions = Record<string, { qty_gram: number; uses: number }[]>;
+
 interface Props {
     variant: Variant;
     storeId: number;
     storeName?: string;
+    /** All stores, to offer "copy this recipe to …". */
+    stores?: Store[];
     stocks: StockItem[];
     onNotify: (title: string, message: string, type: 'success' | 'error') => void;
     onSaved?: () => void;
@@ -45,7 +50,7 @@ const isGram = (unit: string | null | undefined) => GRAM_UNITS.includes((unit ??
  * A Box Kecil uses the menu's "porsi resep" share of it; a mixed box uses 1/N per flavor.
  * The HPP shown is computed by the backend from the saved recipe and the latest purchase prices.
  */
-export default function VariantRecipeEditor({ variant, storeId, storeName, stocks, onNotify, onSaved }: Props) {
+export default function VariantRecipeEditor({ variant, storeId, storeName, stores = [], stocks, onNotify, onSaved }: Props) {
     const [rows, setRows] = useState<RecipeRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -54,6 +59,51 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, stock
     const [hppVersion, setHppVersion] = useState(0);
 
     const gramStocks = stocks.filter(s => s.store_id === storeId && isGram(s.unit));
+    const [suggestions, setSuggestions] = useState<Suggestions>({});
+    const [copyTarget, setCopyTarget] = useState<Store | null>(null);
+    const [copying, setCopying] = useState(false);
+    const otherStores = stores.filter(s => s.id !== storeId);
+    const shortNames = shortStoreNames(stores);
+
+    // Grams used before for each ingredient (any flavor, any store), most used first.
+    useEffect(() => {
+        let cancelled = false;
+        fetchJson(`${API_URL}/api/variant-recipe/suggestions`)
+            .then(json => { if (!cancelled && json.status === 'ok') setSuggestions(json.data); })
+            .catch(() => undefined);
+        return () => { cancelled = true; };
+    }, [hppVersion]);
+
+    const suggestionsFor = (stockId: number | '') => {
+        if (stockId === '') return [];
+        const item = gramStocks.find(s => s.id === stockId);
+        return item ? suggestions[item.item_name.trim().toLowerCase()] ?? [] : [];
+    };
+
+    // Picking an ingredient pre-fills its most used gram value (only when the field is empty).
+    const pickIngredient = (i: number, stockId: number | '') => {
+        const top = suggestionsFor(stockId)[0];
+        setRows(prev => prev.map((r, idx) => (idx === i ? { stock_id: stockId, qty_gram: r.qty_gram.trim() === '' && top ? String(top.qty_gram) : r.qty_gram } : r)));
+    };
+
+    const copyToStore = async (target: Store) => {
+        setCopying(true);
+        try {
+            const json = await fetchJson(`${API_URL}/api/variant-recipe/copy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from_store_id: storeId, to_store_id: target.id, variant_ids: [variant.id] }),
+            });
+            const created: string[] = json.data.created_stock ?? [];
+            onNotify('✅ Disalin', `Resep ${variant.variant_name} disalin ke ${target.name}${created.length ? `. Bahan baru (stok 0): ${created.join(', ')}` : ''}`, 'success');
+            setCopyTarget(null);
+            onSaved?.();
+        } catch (e) {
+            onNotify('❌ Gagal', e instanceof Error ? e.message : 'Gagal menyalin resep', 'error');
+        } finally {
+            setCopying(false);
+        }
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -132,12 +182,15 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, stock
                 ) : rows.length === 0 ? (
                     <p className="text-sm text-primary/50">Belum ada bahan di resep ini.</p>
                 ) : (
-                    rows.map((row, i) => (
-                        <div key={i} className="flex items-center gap-2">
+                    rows.map((row, i) => {
+                        const chips = suggestionsFor(row.stock_id).filter(sg => String(sg.qty_gram) !== row.qty_gram.trim()).slice(0, 3);
+                        return (
+                        <div key={i} className="space-y-1.5">
+                        <div className="flex items-center gap-2">
                             <select
                                 aria-label="Bahan"
                                 value={row.stock_id}
-                                onChange={e => updateRow(i, { stock_id: e.target.value ? Number(e.target.value) : '' })}
+                                onChange={e => pickIngredient(i, e.target.value ? Number(e.target.value) : '')}
                                 className={`${inputClass} flex-1 min-w-0`}
                             >
                                 <option value="">Pilih bahan…</option>
@@ -165,7 +218,25 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, stock
                                 <LuTrash2 />
                             </button>
                         </div>
-                    ))
+                        {chips.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 pl-1">
+                                <span className="text-[11px] font-semibold text-primary/50">Pernah dipakai:</span>
+                                {chips.map(sg => (
+                                    <button
+                                        key={sg.qty_gram}
+                                        type="button"
+                                        onClick={() => updateRow(i, { qty_gram: String(sg.qty_gram) })}
+                                        className="h-7 px-2.5 rounded-full bg-primary/5 border border-primary/10 text-xs font-bold text-primary tabular-nums hover:bg-primary/10"
+                                        title={`Dipakai di ${sg.uses} resep`}
+                                    >
+                                        {sg.qty_gram} g
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        </div>
+                        );
+                    })
                 )}
                 <div className="flex flex-wrap gap-2 pt-1">
                     <button type="button" onClick={() => setRows(prev => [...prev, { stock_id: '', qty_gram: '' }])} disabled={gramStocks.length === 0} className={buttonSecondary}>
@@ -176,6 +247,30 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, stock
                     </button>
                 </div>
             </div>
+
+            {otherStores.length > 0 && rows.some(r => r.stock_id !== '') && (
+                <div className="pt-3 border-t border-primary/10 space-y-2">
+                    {copyTarget ? (
+                        <ConfirmBar
+                            message={`Resep ${variant.variant_name} di ${copyTarget.name} akan diganti dengan resep ini. Bahan yang belum ada di sana dibuat dengan stok 0.`}
+                            confirmLabel="Salin"
+                            busy={copying}
+                            onConfirm={() => copyToStore(copyTarget)}
+                            onCancel={() => setCopyTarget(null)}
+                        />
+                    ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold text-primary/60">Resep sama di store lain?</span>
+                            {otherStores.map(s => (
+                                <button key={s.id} type="button" className={`${buttonSecondary} h-9 sm:h-9`} onClick={() => setCopyTarget(s)} title={`Salin resep tersimpan ke ${s.name}`}>
+                                    <LuCopy /> Salin ke {shortNames[s.id]}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <p className="text-[11px] text-primary/50">Yang disalin adalah resep yang sudah disimpan.</p>
+                </div>
+            )}
         </div>
     );
 }

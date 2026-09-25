@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { LuImagePlus, LuPlus, LuSearch, LuTrash2, LuX } from 'react-icons/lu';
+import { LuCopy, LuImagePlus, LuPlus, LuSearch, LuTrash2, LuX } from 'react-icons/lu';
 import type { Store, Variant } from '@/types/menu';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 import { uploadImage } from '@/utils/upload';
 import VariantRecipeEditor, { type StockItem } from '@/components/VariantRecipeEditor';
+import { shortStoreNames } from '@/components/StoreSwitcher';
 import { BackButton, Card, ConfirmBar, EmptyState, Field, SectionHeader, StatusPill, StickyActions, buttonDanger, buttonPrimary, buttonSecondary, inputClass } from './ui';
 
 type Notify = (title: string, message: string, type: 'success' | 'error') => void;
@@ -39,6 +40,30 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
     const [busy, setBusy] = useState(false);
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
+    const [bulkTarget, setBulkTarget] = useState<Store | null>(null);
+    const [bulkBusy, setBulkBusy] = useState(false);
+    const otherStores = stores.filter(s => s.id !== activeStoreId);
+    const shortNames = shortStoreNames(stores);
+
+    // Copy every saved recipe of the selected store to another store.
+    const copyAll = async (target: Store) => {
+        setBulkBusy(true);
+        try {
+            const json = await fetchJson(`${API_URL}/api/variant-recipe/copy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from_store_id: activeStoreId, to_store_id: target.id }),
+            });
+            const created: string[] = json.data.created_stock ?? [];
+            notify('✅ Disalin', `${json.data.copied_variants} resep disalin ke ${target.name}${created.length ? `. Bahan baru (stok 0): ${created.join(', ')}` : ''}`, 'success');
+            setBulkTarget(null);
+            onChanged();
+        } catch (e) {
+            notify('❌ Gagal', e instanceof Error ? e.message : 'Gagal menyalin resep', 'error');
+        } finally {
+            setBulkBusy(false);
+        }
+    };
 
     const activeStore = stores.find(s => s.id === activeStoreId);
     const list = useMemo(() => {
@@ -125,8 +150,28 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
             <SectionHeader
                 title="Varian rasa & resep"
                 description="Setiap rasa punya resepnya sendiri (misalnya Choco Cheese bukan campuran Choco + Cheese). Resep dan HPP berlaku per store."
-                action={<button type="button" className={buttonPrimary} onClick={openNew}><LuPlus /> Tambah rasa</button>}
+                action={
+                    <div className="flex flex-wrap gap-2">
+                        {otherStores.map(s => (
+                            <button key={s.id} type="button" className={buttonSecondary} onClick={() => setBulkTarget(s)} title={`Salin semua resep ${activeStore?.name ?? ''} ke ${s.name}`}>
+                                <LuCopy /> Salin semua resep ke {shortNames[s.id]}
+                            </button>
+                        ))}
+                        <button type="button" className={buttonPrimary} onClick={openNew}><LuPlus /> Tambah rasa</button>
+                    </div>
+                }
             />
+            {bulkTarget && (
+                <div className="mt-3">
+                    <ConfirmBar
+                        message={`Semua resep ${activeStore?.name ?? ''} disalin ke ${bulkTarget.name}. Resep rasa yang sama di ${bulkTarget.name} akan diganti, dan bahan yang belum ada dibuat dengan stok 0.`}
+                        confirmLabel="Salin semua"
+                        busy={bulkBusy}
+                        onConfirm={() => copyAll(bulkTarget)}
+                        onCancel={() => setBulkTarget(null)}
+                    />
+                </div>
+            )}
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start">
@@ -234,6 +279,7 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
                                     variant={selected}
                                     storeId={activeStoreId}
                                     storeName={activeStore?.name}
+                                    stores={stores}
                                     stocks={stocks}
                                     onNotify={notify}
                                     onSaved={onChanged}
