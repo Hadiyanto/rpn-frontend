@@ -23,3 +23,19 @@ body {
   font-family: var(--font-public-sans), sans-serif;
   min-height: 100vh;
 }
+/* Horizontally scrolling chip/tab rows: keep them swipeable but hide the scrollbar. */
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { printReceipt } from '@/utils/printer';
 import { LuPrinter } from 'react-icons/lu';
+import { BRAND_NAME } from '@/utils/brand';
 
 interface PrintReceiptProps {
     data: {
@@ -29,7 +30,7 @@ export default function PrintReceipt({ data, onSuccess }: PrintReceiptProps) {
             }));
 
             await printReceipt({
-                storeName: 'Raja Pisang Nugget',
+                storeName: BRAND_NAME,
                 ...data,
                 items: printItems
             });

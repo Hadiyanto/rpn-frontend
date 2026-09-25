@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useMenuPrices } from '@/hooks/useMenuPrices';
 import {
-    LuMenu,
     LuTrendingUp,
     LuCalendarDays,
     LuPackage,
@@ -12,15 +12,18 @@ import {
     LuClipboardList,
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
-import StoreFilter from '@/components/StoreFilter';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
+import { formatChipDate, formatRupiah, getTodayStr } from '@/utils/format';
+import PageHeader, { ChipRow, chipClass } from '@/components/PageHeader';
+import StoreSwitcher from '@/components/StoreSwitcher';
 
 interface OrderItem {
     id: number;
     qty: number;
     name: string;
+    // Historical orders may still contain the retired 'HAMPERS' type.
     box_type: 'FULL' | 'HALF' | 'HAMPERS';
 }
 
@@ -37,26 +40,6 @@ interface Order {
     store_id: number | null;
 }
 
-// Fixed prices from menu table
-const PRICE: Record<'FULL' | 'HALF' | 'HAMPERS', number> = {
-    FULL: 65000,
-    HALF: 35000,
-    HAMPERS: 135000, // standard hamper price, updates dynamically in DB elsewhere
-};
-
-function orderRevenue(order: Order): number {
-    return order.items.reduce((sum, i) => sum + i.qty * PRICE[i.box_type], 0);
-}
-
-function formatRupiah(n: number): string {
-    return 'Rp ' + n.toLocaleString('id-ID');
-}
-
-function getTodayStr() {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
 const DAY_ID: Record<number, string> = {
     0: 'Minggu', 1: 'Senin', 2: 'Selasa', 3: 'Rabu', 4: 'Kamis', 5: 'Jumat', 6: 'Sabtu',
 };
@@ -67,12 +50,6 @@ function formatDate(dateStr: string) {
     return `${day}, ${date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
 }
 
-function formatChipDate(dateStr: string) {
-    const date = new Date(`${dateStr}T00:00:00+07:00`);
-    const day = date.toLocaleDateString('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
-    return `${day.slice(0, 3)} / ${date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' })}`;
-}
-
 const PAYMENT_STYLES: Record<string, string> = {
     TRANSFER: 'bg-blue-100 text-blue-600',
     CASH: 'bg-emerald-100 text-emerald-600',
@@ -81,6 +58,7 @@ const PAYMENT_STYLES: Record<string, string> = {
 export default function FinancePage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
+    const { priceOf, loading: pricesLoading } = useMenuPrices();
     const [showSidebar, setShowSidebar] = useState(false);
     const userRoleData = useUserRole('finance');
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
@@ -98,6 +76,8 @@ export default function FinancePage() {
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
     }, []);
+
+    const orderRevenue = (order: Order) => order.items.reduce((sum, i) => sum + i.qty * priceOf(i.box_type), 0);
 
     useEffect(() => {
         fetchJson(`${API_URL}/api/stores`)
@@ -151,26 +131,14 @@ export default function FinancePage() {
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
                 {/* Header */}
-                <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 pt-5 pb-4 space-y-4">
-                    <div className="flex justify-between items-center">
-                        <button
-                            onClick={() => setShowSidebar(true)}
-                            className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm"
-                        >
-                            <LuMenu className="text-primary text-lg" />
-                        </button>
-                        <h1 className="text-2xl font-extrabold tracking-tight text-primary">Finance</h1>
-                        <StoreFilter stores={stores} value={storeFilter} onChange={setStoreFilter} />
-                    </div>
+                <PageHeader title="Finance" subtitle="Pendapatan dari order selesai" icon={<LuBanknote />} onMenu={() => setShowSidebar(true)}>
+                    <StoreSwitcher stores={stores} value={storeFilter} onChange={setStoreFilter} allowAll />
 
                     {/* Date filter chips */}
-                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    <ChipRow label="Tanggal">
                         <button
                             onClick={() => setActiveDate('ALL')}
-                            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${activeDate === 'ALL'
-                                ? 'bg-primary text-brand-yellow shadow-md'
-                                : 'bg-white/60 text-primary/60 border border-primary/10'
-                                }`}
+                            className={chipClass(activeDate === 'ALL')}
                         >
                             Semua
                         </button>
@@ -178,54 +146,38 @@ export default function FinancePage() {
                             <button
                                 key={date}
                                 onClick={() => setActiveDate(date)}
-                                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${activeDate === date
-                                    ? 'bg-primary text-brand-yellow shadow-md'
-                                    : 'bg-white/60 text-primary/60 border border-primary/10'
-                                    }`}
+                                className={chipClass(activeDate === date)}
                             >
                                 {formatChipDate(date)}
                             </button>
                         ))}
-                    </div>
+                    </ChipRow>
 
                     {/* Payment method filter chips */}
-                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                        {(['ALL', 'TRANSFER', 'CASH'] as const).map(pm => {
-                            const isActive = activePayment === pm;
-                            const chipStyle = isActive && pm !== 'ALL'
-                                ? (PAYMENT_STYLES[pm] ?? 'bg-primary text-brand-yellow')
-                                : isActive
-                                    ? 'bg-primary text-brand-yellow shadow-md'
-                                    : 'bg-white/60 text-primary/60 border border-primary/10';
-                            const label = pm === 'ALL' ? 'Semua' : pm === 'TRANSFER' ? '💳 Transfer' : '💵 Cash';
-                            return (
-                                <button
-                                    key={pm}
-                                    onClick={() => setActivePayment(pm)}
-                                    className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${chipStyle}`}
-                                >
-                                    {label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </header>
+                    <ChipRow label="Metode bayar">
+                        {(['ALL', 'TRANSFER', 'CASH'] as const).map(pm => (
+                            <button key={pm} onClick={() => setActivePayment(pm)} className={chipClass(activePayment === pm)}>
+                                {pm === 'ALL' ? 'Semua' : pm === 'TRANSFER' ? 'Transfer' : 'Cash'}
+                            </button>
+                        ))}
+                    </ChipRow>
+                </PageHeader>
 
                 <main className="flex-1 px-4 py-5 space-y-4 pb-16">
-                    {loading && (
+                    {(loading || pricesLoading) && (
                         <div className="flex justify-center pt-20">
                             <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
                         </div>
                     )}
 
-                    {!loading && doneOrders.length === 0 && (
+                    {!loading && !pricesLoading && doneOrders.length === 0 && (
                         <div className="flex flex-col items-center justify-center pt-24 gap-3 text-primary/40">
                             <LuClipboardList className="text-5xl" />
                             <p className="text-sm font-semibold">Belum ada order DONE</p>
                         </div>
                     )}
 
-                    {!loading && doneOrders.length > 0 && (
+                    {!loading && !pricesLoading && doneOrders.length > 0 && (
                         <>
                             {/* Hero Revenue Card */}
                             <section className="bg-primary rounded-3xl p-6 shadow-xl relative overflow-hidden">
@@ -268,13 +220,13 @@ export default function FinancePage() {
                             <section className="grid grid-cols-2 gap-3">
                                 <div className="bg-white/60 rounded-2xl p-4 border border-primary/10">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-primary/40 mb-1">Full Box</p>
-                                    <p className="text-lg font-black text-primary">{formatRupiah(PRICE.FULL)}</p>
-                                    <p className="text-[10px] text-primary/40 font-semibold mt-0.5">× {fullBoxCount} = <span className="font-black text-primary/70">{formatRupiah(PRICE.FULL * fullBoxCount)}</span></p>
+                                    <p className="text-lg font-black text-primary">{formatRupiah(priceOf('FULL'))}</p>
+                                    <p className="text-[10px] text-primary/40 font-semibold mt-0.5">× {fullBoxCount} = <span className="font-black text-primary/70">{formatRupiah(priceOf('FULL') * fullBoxCount)}</span></p>
                                 </div>
                                 <div className="bg-white/60 rounded-2xl p-4 border border-primary/10">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-primary/40 mb-1">Half Box</p>
-                                    <p className="text-lg font-black text-primary">{formatRupiah(PRICE.HALF)}</p>
-                                    <p className="text-[10px] text-primary/40 font-semibold mt-0.5">× {halfBoxCount} = <span className="font-black text-primary/70">{formatRupiah(PRICE.HALF * halfBoxCount)}</span></p>
+                                    <p className="text-lg font-black text-primary">{formatRupiah(priceOf('HALF'))}</p>
+                                    <p className="text-[10px] text-primary/40 font-semibold mt-0.5">× {halfBoxCount} = <span className="font-black text-primary/70">{formatRupiah(priceOf('HALF') * halfBoxCount)}</span></p>
                                 </div>
                             </section>
 
@@ -385,7 +337,7 @@ export default function FinancePage() {
                                                                     {item.box_type}
                                                                 </span>
                                                             </div>
-                                                            <span className="font-black text-primary">{formatRupiah(item.qty * PRICE[item.box_type])}</span>
+                                                            <span className="font-black text-primary">{formatRupiah(item.qty * priceOf(item.box_type))}</span>
                                                         </div>
                                                     ))}
                                                     <div className="flex justify-between text-xs pt-2 border-t border-primary/10">

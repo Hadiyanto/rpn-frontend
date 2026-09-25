@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
-import { LuMenu, LuPlus, LuHistory, LuPackage } from 'react-icons/lu';
+import { LuPlus, LuHistory, LuPackage, LuPencil, LuTrash2 } from 'react-icons/lu';
+import PageHeader from '@/components/PageHeader';
+import StoreSwitcher from '@/components/StoreSwitcher';
 import { MdClose } from 'react-icons/md';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useRouter } from 'next/navigation';
@@ -19,18 +21,31 @@ export default function StockPage() {
     const [stocks, setStocks] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
+    // Stock is per store: every store keeps its own physical inventory.
+    const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+    const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
+
+    const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [newItemName, setNewItemName] = useState('');
+    const [newItemUnit, setNewItemUnit] = useState('gram');
+    const [newItemQty, setNewItemQty] = useState('');
+    // null = creating a new item; otherwise the id of the item being edited.
+    const [editingStockId, setEditingStockId] = useState<number | null>(null);
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedStock, setSelectedStock] = useState<any>(null);
     const [qtyChange, setQtyChange] = useState('');
     const [isIncrement, setIsIncrement] = useState(false); // Default: OUT
     const [notes, setNotes] = useState('');
+    const [totalPrice, setTotalPrice] = useState('');
 
     const { toast, showToast, hideToast } = useToast();
 
-    const fetchStocks = async () => {
+    const fetchStocks = async (storeId: number | null = activeStoreId) => {
+        if (!storeId) return;
         setLoading(true);
         try {
-            const json = await fetchJson(`${API_URL}/api/stocks`);
+            const json = await fetchJson(`${API_URL}/api/stocks?store_id=${storeId}`);
             if (json.status === 'ok') {
                 setStocks(json.data);
             }
@@ -43,8 +58,92 @@ export default function StockPage() {
     };
 
     useEffect(() => {
-        fetchStocks();
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => {
+                if (json.status === 'ok') {
+                    setStores(json.data);
+                    if (json.data.length > 0) setActiveStoreId(json.data[0].id);
+                    else setLoading(false);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                setLoading(false);
+                showToast('❌ Error', 'Gagal memuat daftar store', 'error');
+            });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        if (activeStoreId) fetchStocks(activeStoreId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeStoreId]);
+
+    const closeItemModal = () => {
+        setIsCreateOpen(false);
+        setEditingStockId(null);
+        setNewItemName('');
+        setNewItemUnit('gram');
+        setNewItemQty('');
+    };
+
+    const openCreateItem = () => {
+        closeItemModal();
+        setIsCreateOpen(true);
+    };
+
+    const openEditItem = (stock: { id: number; item_name?: string; unit?: string | null }) => {
+        setEditingStockId(stock.id);
+        setNewItemName(stock.item_name ?? '');
+        setNewItemUnit(stock.unit ?? 'gram');
+        setNewItemQty('');
+        setIsCreateOpen(true);
+    };
+
+    const handleCreateStock = async () => {
+        if (!activeStoreId || !newItemName.trim() || !newItemUnit.trim()) {
+            showToast('⚠️ Peringatan', 'Nama bahan dan satuan wajib diisi.', 'error');
+            return;
+        }
+        try {
+            const json = editingStockId
+                ? await fetchJson(`${API_URL}/api/stocks/${editingStockId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ item_name: newItemName.trim(), unit: newItemUnit.trim() }),
+                })
+                : await fetchJson(`${API_URL}/api/stocks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        item_name: newItemName.trim(),
+                        unit: newItemUnit.trim(),
+                        store_id: activeStoreId,
+                        qty: newItemQty ? parseFloat(newItemQty) : 0,
+                    }),
+                });
+            if (json.status === 'ok') {
+                showToast('✅ Berhasil', editingStockId ? 'Bahan diperbarui' : 'Bahan ditambahkan', 'success');
+                closeItemModal();
+                fetchStocks();
+            }
+        } catch (e) {
+            showToast('❌ Gagal', e instanceof Error ? e.message : 'Gagal menyimpan bahan', 'error');
+        }
+    };
+
+    const handleDeleteStock = async () => {
+        if (!editingStockId) return;
+        if (!confirm(`Hapus bahan "${newItemName}" beserta riwayat stoknya?`)) return;
+        try {
+            await fetchJson(`${API_URL}/api/stocks/${editingStockId}`, { method: 'DELETE' });
+            showToast('✅ Berhasil', 'Bahan dihapus', 'success');
+            closeItemModal();
+            fetchStocks();
+        } catch (e) {
+            showToast('❌ Gagal', e instanceof Error ? e.message : 'Gagal menghapus bahan', 'error');
+        }
+    };
 
     const handleAdjustStock = async () => {
         if (!selectedStock || !qtyChange) {
@@ -67,11 +166,13 @@ export default function StockPage() {
             inputQty,
             type,
             notes || (isIncrement ? 'Stok tambahan' : 'Penyesuaian stok fisik'),
-            !isIncrement // is_target = true jika mode Sisa Stok (unchecked)
+            !isIncrement, // is_target = true jika mode Sisa Stok (unchecked)
+            // Purchase price only applies to stock-in; it sets the HPP price per unit.
+            isIncrement && totalPrice.trim() ? parseFloat(totalPrice) : null
         );
     };
 
-    const executeAdjustment = async (stock_id: number, qty_change: number, type: string, n: string, is_target: boolean = false) => {
+    const executeAdjustment = async (stock_id: number, qty_change: number, type: string, n: string, is_target: boolean = false, total_price: number | null = null) => {
         try {
             const json = await fetchJson(`${API_URL}/api/stocks/adjust`, {
                 method: 'POST',
@@ -81,7 +182,8 @@ export default function StockPage() {
                     qty_change,
                     type,
                     is_target,
-                    notes: n
+                    notes: n,
+                    total_price,
                 }),
             });
             if (json.status === 'ok') {
@@ -89,13 +191,14 @@ export default function StockPage() {
                 setIsModalOpen(false);
                 setQtyChange('');
                 setNotes('');
+                setTotalPrice('');
                 fetchStocks();
             } else {
                 showToast('❌ Gagal', json.message || 'Gagal update stok', 'error');
             }
         } catch (e) {
             console.error(e);
-            showToast('❌ Error', 'Terjadi kesalahan sistem', 'error');
+            showToast('❌ Error', e instanceof Error ? e.message : 'Terjadi kesalahan sistem', 'error');
         }
     };
 
@@ -104,6 +207,7 @@ export default function StockPage() {
         setQtyChange('');
         setIsIncrement(false); // Reset to default OUT
         setNotes('');
+        setTotalPrice('');
         setIsModalOpen(true);
     };
 
@@ -117,26 +221,91 @@ export default function StockPage() {
                 userRole={userRoleData.role}
             />
 
-            {/* Header */}
-            <div className="sticky top-0 z-40 bg-brand-yellow/90 backdrop-blur-md border-b border-primary/10">
-                <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => setSidebarOpen(true)}
-                            className="p-2 -ml-2 rounded-xl hover:bg-black/5 transition-colors"
-                        >
-                            <LuMenu className="text-2xl text-primary" />
-                        </button>
-                        <div>
-                            <h1 className="text-xl font-extrabold text-primary flex items-center gap-2">
-                                <LuPackage className="text-primary/70" />
-                                Stock Barang
-                            </h1>
-                            <p className="text-xs font-bold text-primary/60">Kelola inventaris dan stok harian</p>
+            <PageHeader
+                title="Stok Barang"
+                subtitle="Kelola inventaris dan stok harian per store"
+                icon={<LuPackage />}
+                onMenu={() => setSidebarOpen(true)}
+                action={
+                    <button
+                        onClick={openCreateItem}
+                        disabled={!activeStoreId}
+                        className="h-10 px-3.5 inline-flex items-center gap-1.5 bg-primary text-brand-yellow font-bold text-sm rounded-xl hover:opacity-90 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                        <LuPlus size={16} /> Bahan
+                    </button>
+                }
+            >
+                {/* Stock is per store */}
+                <StoreSwitcher stores={stores} value={activeStoreId} onChange={setActiveStoreId} />
+            </PageHeader>
+
+            {/* Create Stock Item Modal */}
+            {isCreateOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary/40 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl w-full max-w-sm p-5 shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-lg font-extrabold text-primary">{editingStockId ? 'Edit Bahan' : 'Tambah Bahan'}</h2>
+                            <button onClick={closeItemModal} className="p-2 rounded-xl hover:bg-black/5">
+                                <MdClose className="text-xl text-primary" />
+                            </button>
                         </div>
+                        <p className="text-xs font-bold text-primary/50">Store: {stores.find(s => s.id === activeStoreId)?.name}</p>
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase text-primary/60">Nama Bahan</label>
+                            <input
+                                value={newItemName}
+                                onChange={e => setNewItemName(e.target.value)}
+                                placeholder="mis. Tepung Terigu"
+                                className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                            />
+                        </div>
+                        <div className="flex gap-3">
+                            <div className="flex-1 space-y-1.5">
+                                <label className="text-[10px] font-black uppercase text-primary/60">Satuan</label>
+                                <select
+                                    value={newItemUnit}
+                                    onChange={e => setNewItemUnit(e.target.value)}
+                                    className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                >
+                                    <option value="gram">gram</option>
+                                    <option value="ml">ml</option>
+                                    <option value="pcs">pcs</option>
+                                    <option value="kg">kg</option>
+                                    <option value="liter">liter</option>
+                                </select>
+                            </div>
+                            {!editingStockId && (
+                            <div className="flex-1 space-y-1.5">
+                                <label className="text-[10px] font-black uppercase text-primary/60">Stok Awal</label>
+                                <input
+                                    type="number"
+                                    value={newItemQty}
+                                    onChange={e => setNewItemQty(e.target.value)}
+                                    placeholder="0"
+                                    className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                />
+                            </div>
+                            )}
+                        </div>
+                        <p className="text-[10px] font-bold text-primary/50">Hanya bahan bersatuan <b>gram</b> yang bisa dipakai di resep (auto-potong stok & HPP).</p>
+                        <button
+                            onClick={handleCreateStock}
+                            className="w-full h-11 bg-primary text-brand-yellow font-bold text-sm rounded-xl hover:opacity-90"
+                        >
+                            Simpan
+                        </button>
+                        {editingStockId && (
+                            <button
+                                onClick={handleDeleteStock}
+                                className="w-full h-10 flex items-center justify-center gap-1.5 text-red-600 font-bold text-xs rounded-xl hover:bg-red-50"
+                            >
+                                <LuTrash2 /> Hapus Bahan
+                            </button>
+                        )}
                     </div>
                 </div>
-            </div>
+            )}
 
             {/* Content */}
             <div className="p-3 pb-24 space-y-2">
@@ -170,10 +339,22 @@ export default function StockPage() {
                                         <span className="text-[10px] font-bold text-primary/50 uppercase">
                                             {stock.unit}
                                         </span>
+                                        {stock.price_per_unit != null && (
+                                            <span className="text-[10px] font-bold text-primary/40 ml-1">
+                                                · Rp {Number(stock.price_per_unit).toLocaleString('id-ID', { maximumFractionDigits: 2 })}/{stock.unit}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
 
                                 <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => openEditItem(stock)}
+                                        className="p-2.5 text-primary/40 hover:text-primary hover:bg-gray-100 rounded-lg transition-colors"
+                                        title="Edit / hapus bahan"
+                                    >
+                                        <LuPencil size={16} />
+                                    </button>
                                     <button
                                         onClick={() => openAdjustModal(stock)}
                                         className="px-3 py-2 bg-brand-yellow/30 hover:bg-brand-yellow/50 text-primary font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
@@ -254,6 +435,25 @@ export default function StockPage() {
                                     )}
                                 </div>
                             </div>
+
+                            {isIncrement && (
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60 ml-1">Total Harga Beli (Opsional)</label>
+                                    <input
+                                        type="number"
+                                        inputMode="decimal"
+                                        value={totalPrice}
+                                        onChange={e => setTotalPrice(e.target.value)}
+                                        placeholder="mis. 700000"
+                                        className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm font-bold text-primary focus:ring-2 focus:ring-primary/10 focus:border-primary outline-none transition-all placeholder:text-gray-300 placeholder:font-medium"
+                                    />
+                                    {totalPrice && parseFloat(qtyChange) > 0 && !isNaN(parseFloat(totalPrice)) && (
+                                        <p className="text-xs font-medium text-gray-500 ml-1">
+                                            ≈ <span className="font-bold text-primary">Rp {(parseFloat(totalPrice) / parseFloat(qtyChange)).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</span> / {selectedStock.unit} — dipakai sebagai harga modal (HPP) terbaru
+                                        </p>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black uppercase text-primary/60 ml-1">Catatan (Opsional)</label>

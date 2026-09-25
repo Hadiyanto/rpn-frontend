@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Public_Sans } from "next/font/google";
 import "./globals.css";
+import { BRAND_NAME } from '@/utils/brand';
 
 const publicSans = Public_Sans({
   subsets: ["latin"],
@@ -8,7 +9,7 @@ const publicSans = Public_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Raja Pisang Nugget",
+  title: BRAND_NAME,
   description: "Business Login Portal",
   manifest: "/json/manifest.json",
   icons: {

@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import { BRAND_NAME } from '@/utils/brand';
 import {
     LuX,
     LuHouse,
@@ -84,7 +85,7 @@ export default function Sidebar({ open, onClose, allowedPages, userEmail, userRo
                         </div>
                         <div>
                             <p className="text-brand-yellow text-sm font-extrabold leading-tight">
-                                {userEmail || 'Raja Pisang Nugget'}
+                                {userEmail || BRAND_NAME}
                             </p>
                             <p className="text-white/40 text-[10px] font-medium">{displayRole}</p>
                         </div>

@@ -4,18 +4,15 @@ import dynamic from 'next/dynamic';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
-import { LuMenu, LuTruck, LuMapPin, LuSearch, LuPackage, LuCheck, LuX, LuRefreshCw, LuClipboardList } from 'react-icons/lu';
+import { LuTruck, LuMapPin, LuSearch, LuPackage, LuCheck, LuX, LuRefreshCw, LuClipboardList } from 'react-icons/lu';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
+import { BOX_TYPES, boxLabelID } from '@/utils/box';
+import PageHeader from '@/components/PageHeader';
+import StoreSwitcher from '@/components/StoreSwitcher';
 
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), { ssr: false });
 
-const ORIGIN_AREA_ID = 'IDNP11KOTA3676KEC367601'; // Rawajati, Pancoran — update this after doing area search
-
-// Default package for 1 box besar
-const DEFAULT_ITEMS = [
-    { name: 'Pisang Nugget Box Besar', description: 'Box snack', value: 50000, length: 30, width: 30, height: 10, weight: 500, quantity: 1 },
-];
 
 type Step = 'map' | 'area' | 'rates' | 'form' | 'done';
 
@@ -58,6 +55,20 @@ export default function ShippingPage() {
     const [qty, setQty] = useState(1);
     const [boxType, setBoxType] = useState<'FULL' | 'HALF'>('FULL');
     const [selectedDeliveryType, setSelectedDeliveryType] = useState<'instant' | 'same_day'>('instant');
+
+    // Origin store: the backend takes origin address/area/coordinates from this store.
+    const [stores, setStores] = useState<{ id: number; name: string; latitude?: number | null; longitude?: number | null }[]>([]);
+    const [storeId, setStoreId] = useState<number | null>(null);
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => {
+                if (json.status === 'ok') {
+                    setStores(json.data);
+                    if (json.data.length > 0) setStoreId(json.data[0].id);
+                }
+            })
+            .catch(console.error);
+    }, []);
 
     // Rates
     const [rates, setRates] = useState<Rate[]>([]);
@@ -108,15 +119,11 @@ export default function ShippingPage() {
         }, 500);
     }, [areaQuery]);
 
-    const getItems = () => {
-        const base = boxType === 'FULL'
-            ? { name: 'Pisang Nugget Box Besar', value: 50000, length: 30, width: 30, height: 10, weight: 500 }
-            : { name: 'Pisang Nugget Box Kecil', value: 30000, length: 20, width: 20, height: 8, weight: 300 };
-        return [{ ...base, description: 'Snack box', quantity: qty }];
-    };
+    // Price, size and weight per box come from the menu table on the backend.
+    const getBoxes = () => [{ box_type: boxType, qty }];
 
     const fetchRates = async () => {
-        if (!selectedArea) return;
+        if (!selectedArea || !storeId) return;
         setRatesLoading(true);
         setRates([]);
         try {
@@ -124,10 +131,11 @@ export default function ShippingPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    origin_area_id: ORIGIN_AREA_ID,
+                    store_id: storeId,
+                    destination_latitude: destLat,
+                    destination_longitude: destLng,
                     destination_area_id: selectedArea.id,
-                    couriers: 'gosend,grab,gojek,lalamove,borzo,paxel,jne,sicepat,jnt,anteraja',
-                    items: getItems(),
+                    boxes: getBoxes(), // couriers default on the backend
                 }),
             });
             if (json.status === 'ok') {
@@ -151,17 +159,14 @@ export default function ShippingPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    origin_contact_name: 'Raja Pisang Nugget',
-                    origin_contact_phone: '08561234567',
-                    origin_address: 'Jl. Rawajati Timur VIII, Rawajati, Pancoran, Jakarta Selatan 12750',
-                    origin_area_id: ORIGIN_AREA_ID,
+                    store_id: storeId,
                     destination_contact_name: recipientName,
                     destination_contact_phone: recipientPhone,
                     destination_address: recipientAddress,
                     destination_area_id: selectedArea.id,
                     courier_company: selectedRate.courier_code,
                     courier_type: selectedRate.courier_service_code,
-                    items: getItems(),
+                    boxes: getBoxes(),
                     notes: notes || undefined,
                 }),
             });
@@ -200,23 +205,22 @@ export default function ShippingPage() {
             <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
             {/* Header */}
-            <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 py-4 flex items-center gap-3">
-                <button onClick={() => setSidebarOpen(true)} className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm">
-                    <LuMenu className="text-primary text-lg" />
-                </button>
-                <div className="flex-1">
-                    <h1 className="text-xl font-extrabold text-primary flex items-center gap-2"><LuTruck /> Pengiriman</h1>
-                    <p className="text-[11px] font-bold text-primary/50">Jasa kirim via Biteship</p>
-                </div>
-                {step !== 'map' && (
-                    <button onClick={reset} className="text-xs font-bold text-primary/50 hover:text-primary flex items-center gap-1">
-                        <LuX size={14} /> Reset
+            <PageHeader
+                title="Pengiriman"
+                subtitle="Jasa kirim via Biteship"
+                icon={<LuTruck />}
+                onMenu={() => setSidebarOpen(true)}
+                action={step !== 'map' && (
+                    <button onClick={reset} className="h-10 px-3 rounded-xl text-sm font-bold text-primary/60 hover:text-primary inline-flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                        <LuX size={16} /> Reset
                     </button>
                 )}
-            </header>
+            >
+                <StoreSwitcher stores={stores} value={storeId} onChange={id => { setStoreId(id); setRates([]); setSelectedRate(null); }} label="Dikirim dari store" />
+            </PageHeader>
 
             {/* Step Indicator */}
-            <div className="flex items-center gap-1 px-5 py-3 overflow-x-auto">
+            <div className="flex items-center gap-1 px-5 py-3 overflow-x-auto scrollbar-hide">
                 {(['map', 'area', 'rates', 'form', 'done'] as Step[]).map((s, i) => {
                     const labels: Record<Step, string> = { map: '1. Pin', area: '2. Area', rates: '3. Tarif', form: '4. Penerima', done: '5. Selesai' };
                     const past = ['map', 'area', 'rates', 'form', 'done'].indexOf(step) >= i;
@@ -237,7 +241,7 @@ export default function ShippingPage() {
                 {(step === 'map' || step === 'area') && (
                     <>
                         <div className="rounded-2xl overflow-hidden border border-primary/10 shadow-md" style={{ height: 300 }}>
-                            <LeafletMap destLat={destLat} destLng={destLng} onMapClick={onMapClick} />
+                            <LeafletMap originLat={stores.find(s => s.id === storeId)?.latitude} originLng={stores.find(s => s.id === storeId)?.longitude} destLat={destLat} destLng={destLng} onMapClick={onMapClick} />
                         </div>
 
                         {destLat && (
@@ -293,10 +297,10 @@ export default function ShippingPage() {
                                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-primary/10 space-y-3">
                                     <p className="text-xs font-black text-primary uppercase">Paket</p>
                                     <div className="flex gap-2">
-                                        {(['FULL', 'HALF'] as const).map(type => (
+                                        {BOX_TYPES.map(type => (
                                             <button key={type} onClick={() => setBoxType(type)}
                                                 className={`flex-1 py-2 rounded-xl text-xs font-black border-2 transition-all ${boxType === type ? 'bg-primary text-brand-yellow border-primary' : 'bg-white text-primary/50 border-gray-100'}`}>
-                                                {type === 'FULL' ? 'Box Besar' : 'Box Kecil'}
+                                                {boxLabelID(type)}
                                             </button>
                                         ))}
                                     </div>

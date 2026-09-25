@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import {
-    LuMenu,
     LuTrendingUp,
     LuTrendingDown,
     LuBanknote,
@@ -17,6 +16,8 @@ import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { formatRupiah } from '@/utils/format';
+import PageHeader from '@/components/PageHeader';
 
 interface SummaryData {
     totalRevenue: number;
@@ -29,10 +30,6 @@ interface SummaryData {
     returnToCapital: number;
     totalBoxes: number;
     remainingDebt: number;
-}
-
-function formatRupiah(n: number): string {
-    return 'Rp ' + n.toLocaleString('id-ID');
 }
 
 export default function SummaryPage() {
@@ -82,17 +79,7 @@ export default function SummaryPage() {
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
                 {/* Header */}
-                <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 pt-5 pb-4 space-y-4">
-                    <div className="flex justify-between items-center">
-                        <button
-                            onClick={() => setShowSidebar(true)}
-                            className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm"
-                        >
-                            <LuMenu className="text-primary text-lg" />
-                        </button>
-                        <h1 className="text-2xl font-extrabold tracking-tight text-primary">Business Summary</h1>
-                        <div className="w-10 h-10" />
-                    </div>
+                <PageHeader title="Business Summary" subtitle="Ringkasan keuangan per periode" icon={<LuActivity />} onMenu={() => setShowSidebar(true)}>
 
                     {/* Date Pickers */}
                     <div className="flex items-center gap-2">
@@ -125,7 +112,7 @@ export default function SummaryPage() {
                             <LuCalendarDays className="absolute right-3 top-1/2 -translate-y-1/2 text-primary/40 pointer-events-none" />
                         </div>
                     </div>
-                </header>
+                </PageHeader>
 
                 <main className="flex-1 px-4 py-5 space-y-4 pb-24">
                     {loading && (

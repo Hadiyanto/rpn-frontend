@@ -14,7 +14,6 @@ import {
     LuX,
     LuPlus,
     LuTrash2,
-    LuMenu,
     LuPencil,
     LuWallet,
     LuCheck,
@@ -22,24 +21,30 @@ import {
     LuMessageCircle,
     LuSend,
     LuLayoutGrid,
-    LuLayoutTemplate,
-    LuGift
+    LuLayoutTemplate
 } from 'react-icons/lu';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { printOrder } from '@/utils/printer';
+import type { BoxType } from '@/types/menu';
+import { BOX_TYPES, boxLabelID } from '@/utils/box';
+import FlavorPicker from '@/components/FlavorPicker';
+import { buildSelection, maxFlavorsFor, resolveVariantIds, selectedVariants } from '@/utils/flavors';
 import { subscribePush } from '@/utils/push';
 import Sidebar from '@/components/Sidebar';
-import StoreFilter from '@/components/StoreFilter';
+import PageHeader, { ChipRow, chipClass, headerIconButton } from '@/components/PageHeader';
+import StoreSwitcher from '@/components/StoreSwitcher';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 
 interface OrderItem {
     id?: number;
-    box_type: 'FULL' | 'HALF' | 'HAMPERS';
+    // Historical orders may still contain the retired 'HAMPERS' type.
+    box_type: BoxType | 'HAMPERS';
     name: string;
     qty: number;
+    variant_ids?: number[];
 }
 
 interface Order {
@@ -55,6 +60,7 @@ interface Order {
     created_at: string;
     items: OrderItem[];
     store_id: number | null;
+    biteship_order_id?: string | null;
 }
 
 const DAY_ID: Record<number, string> = {
@@ -182,8 +188,8 @@ export default function OrdersPage() {
             } else {
                 alert(json.message || 'Gagal update status');
             }
-        } catch {
-            alert('Gagal update status');
+        } catch (err) {
+            alert(err instanceof Error ? err.message : 'Gagal update status');
         } finally {
             setUpdatingStatusId(null);
         }
@@ -249,15 +255,13 @@ export default function OrdersPage() {
         let cancelled = false;
         const fetchOptions = async () => {
             try {
-                const [r1, r2, r3] = await Promise.all([
+                const [r1, r2] = await Promise.all([
                     fetchJson(`${API_URL}/api/menu`),
                     fetchJson(`${API_URL}/api/variants`),
-                    fetchJson(`${API_URL}/api/daily-quota`),
                 ]);
                 if (cancelled) return;
                 if (r1.status === 'ok') setMenus(r1.data);
                 if (r2.status === 'ok') setVariants(r2.data);
-                if (r3.status === 'ok') setQuotas(r3.data);
             } catch (err) {
                 console.error('Failed to fetch metadata', err);
             }
@@ -273,7 +277,7 @@ export default function OrdersPage() {
         const dateString = `${y}-${m}-${d}`;
 
         const q = quotas.find(q => q.date === dateString);
-        return q ? (q.remaining_qty > 0 || (q.remaining_hampers_qty || 0) > 0) : false;
+        return q ? q.remaining_qty > 0 : false;
     };
 
     function normalizeVariant(name: string) {
@@ -312,7 +316,7 @@ export default function OrdersPage() {
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
     const [submitting, setSubmitting] = useState(false);
-    const emptyItem = () => ({ box_type: 'FULL' as 'FULL' | 'HALF' | 'HAMPERS', name: '', qty: 1 });
+    const emptyItem = () => ({ box_type: 'FULL' as BoxType, name: '', qty: 1, variant_ids: [] as number[] | undefined });
     const [form, setForm] = useState({
         customer_name: '',
         customer_phone: '',
@@ -320,16 +324,38 @@ export default function OrdersPage() {
         pickup_time: ':',
         note: '',
         payment_method: '' as '' | 'TRANSFER' | 'CASH',
-        pesanan: [{ box_type: 'FULL' as 'FULL' | 'HALF' | 'HAMPERS', name: '', qty: 1 }]
+        // Quota, opening hours and the order itself are per store.
+        store_id: null as number | null,
+        pesanan: [emptyItem()]
     });
 
+    // Default the form's store to the first store once the list is loaded.
     useEffect(() => {
-        if (!form.pickup_date) {
+        if (form.store_id === null && stores.length > 0) {
+            setForm(f => (f.store_id === null ? { ...f, store_id: stores[0].id } : f));
+        }
+    }, [stores, form.store_id]);
+
+    // Daily quota of the store selected in the form.
+    useEffect(() => {
+        if (!form.store_id) {
+            setQuotas([]);
+            return;
+        }
+        let cancelled = false;
+        fetchJson(`${API_URL}/api/daily-quota?store_id=${form.store_id}`)
+            .then(json => { if (!cancelled && json.status === 'ok') setQuotas(json.data); })
+            .catch(console.error);
+        return () => { cancelled = true; };
+    }, [form.store_id]);
+
+    useEffect(() => {
+        if (!form.pickup_date || !form.store_id) {
             setAvailableHours([]);
             return;
         }
         let cancelled = false;
-        fetchJson(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}`)
+        fetchJson(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}&store_id=${form.store_id}`)
             .then(json => {
                 if (!cancelled && json.status === 'ok') {
                     setAvailableHours(json.data);
@@ -337,7 +363,7 @@ export default function OrdersPage() {
             })
             .catch(console.error);
         return () => { cancelled = true; };
-    }, [form.pickup_date]);
+    }, [form.pickup_date, form.store_id]);
 
     const getIsHourAvailable = (hStr: string) => {
         if (!form.pickup_date) return false;
@@ -347,27 +373,37 @@ export default function OrdersPage() {
         if (!hq) return false;
 
         let requestedBox = 0;
-        let requestedHampers = 0;
         form.pesanan.forEach((item) => {
             if (!item.name) return;
-            if (item.box_type === 'HALF') requestedBox += item.qty * 0.5;
-            else if (item.box_type === 'FULL') requestedBox += item.qty;
-            else if (item.box_type === 'HAMPERS') requestedHampers += item.qty;
+            requestedBox += item.box_type === 'HALF' ? item.qty * 0.5 : item.qty;
         });
-        return requestedBox <= hq.remaining_qty && requestedHampers <= (hq.remaining_hampers_qty || 0);
+        return requestedBox <= hq.remaining_qty;
+    };
+
+    // Re-derive this order's raw-material deduction from its current items and recipes.
+    const recalculateStock = async (orderId: number) => {
+        try {
+            const json = await fetchJson(`${API_URL}/api/order/${orderId}/recalculate-stock`, { method: 'POST' });
+            const moved = [...(json.data?.reversed?.movements ?? []), ...(json.data?.applied?.movements ?? [])].length;
+            alert(moved > 0 ? `Stok order #${orderId} dihitung ulang.` : `Tidak ada perubahan stok untuk order #${orderId} (belum ada resep / sudah sesuai).`);
+        } catch (err) {
+            alert(err instanceof Error ? err.message : 'Gagal menghitung ulang stok');
+        }
     };
 
     const resetForm = () => setForm({
         customer_name: '',
         customer_phone: '',
         pickup_date: '',
-        pickup_time: '11:00',
+        pickup_time: ':',
         note: '',
         payment_method: '',
+        store_id: storeFilter ?? stores[0]?.id ?? null,
         pesanan: [emptyItem()],
     });
 
     const submitOrder = async () => {
+        if (!form.store_id) { alert('Store wajib dipilih'); return; }
         if (!form.customer_name.trim()) { alert('Nama Pelanggan wajib diisi'); return; }
         if (!form.customer_phone.trim()) { alert('Nomor WhatsApp wajib diisi'); return; }
         if (!form.pickup_date) { alert('Tanggal Pengambilan wajib diisi'); return; }
@@ -388,7 +424,7 @@ export default function OrdersPage() {
                         payment_method: form.payment_method || null,
                         pesanan: form.pesanan
                             .filter(p => p.name.trim().length > 0 && p.qty > 0)
-                            .map(p => ({ box_type: p.box_type, name: normalizeVariant(p.name.trim()), qty: p.qty })),
+                            .map(p => ({ box_type: p.box_type, name: normalizeVariant(p.name.trim()), qty: p.qty, variant_ids: resolveVariantIds(p, variants) })),
                     }),
                 });
                 if (json.status === 'ok') {
@@ -413,9 +449,10 @@ export default function OrdersPage() {
                         pickup_time: form.pickup_time.trim() || null,
                         note: form.note.trim() || null,
                         payment_method: form.payment_method || null,
+                        store_id: form.store_id,
                         pesanan: form.pesanan
                             .filter(p => p.name.trim().length > 0 && p.qty > 0)
-                            .map(p => ({ box_type: p.box_type, name: normalizeVariant(p.name.trim()), qty: p.qty })),
+                            .map(p => ({ box_type: p.box_type, name: normalizeVariant(p.name.trim()), qty: p.qty, variant_ids: resolveVariantIds(p, variants) })),
                     }),
                 });
                 if (json.status === 'ok') {
@@ -430,7 +467,8 @@ export default function OrdersPage() {
             }
         } catch (err) {
             console.error(err);
-            alert(editingOrder ? 'Gagal update order' : 'Gagal submit order');
+            // fetchJson throws with the backend's message (validation, quota full, …) — show it.
+            alert(err instanceof Error ? err.message : (editingOrder ? 'Gagal update order' : 'Gagal submit order'));
         } finally {
             setSubmitting(false);
         }
@@ -536,21 +574,16 @@ export default function OrdersPage() {
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
                 {/* Header */}
-                <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 pt-5 pb-4 space-y-4">
-                    <div className="flex justify-between items-center">
-                        <button
-                            onClick={() => setShowSidebar(true)}
-                            className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm"
-                        >
-                            <LuMenu className="text-primary text-lg" />
-                        </button>
-                        <h1 className="text-2xl font-extrabold tracking-tight text-primary">Orders</h1>
-                        <div className="flex items-center gap-2">
-                        <StoreFilter stores={stores} value={storeFilter} onChange={setStoreFilter} />
+                <PageHeader
+                    title="Orders"
+                    icon={<LuClipboardList />}
+                    onMenu={() => setShowSidebar(true)}
+                    action={
                         <div className="relative">
                             <button
                                 onClick={toggleBell}
-                                className="relative w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm"
+                                className={headerIconButton}
+                                aria-label="Order sudah dibayar"
                             >
                                 <LuBell className={`text-lg transition-transform ${showNotifPanel ? 'text-primary scale-110' : 'text-primary'}`} />
                                 {unreadCount > 0 && (
@@ -605,14 +638,15 @@ export default function OrdersPage() {
                                 </>
                             )}
                         </div>
-                        </div>
-                    </div>
+                    }
+                >
+                    <StoreSwitcher stores={stores} value={storeFilter} onChange={setStoreFilter} allowAll />
 
                     {/* Search */}
                     <div className="relative">
                         <LuSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/40 text-lg" />
                         <input
-                            className="w-full bg-white/70 border-2 border-primary/10 rounded-2xl py-3 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm placeholder:text-primary/40 text-primary font-medium"
+                            className="w-full h-11 bg-white/80 border border-primary/10 rounded-xl pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/30 text-base sm:text-sm placeholder:text-primary/40 text-primary font-medium"
                             placeholder="Cari nama atau pesanan..."
                             type="text"
                             value={search}
@@ -621,40 +655,23 @@ export default function OrdersPage() {
                     </div>
 
                     {/* Date filter chips */}
-                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    <ChipRow label="Tanggal">
                         {uniqueDates.map((date) => (
-                            <button
-                                key={date}
-                                onClick={() => setActiveDate(date)}
-                                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeDate === date
-                                    ? 'bg-primary text-brand-yellow shadow-md'
-                                    : 'bg-white/60 text-primary/60 border border-primary/10'
-                                    }`}
-                            >
+                            <button key={date} onClick={() => setActiveDate(date)} className={chipClass(activeDate === date)}>
                                 {formatChipDate(date)}
                             </button>
                         ))}
-                    </div>
+                    </ChipRow>
 
                     {/* Status filter tabs */}
-                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x">
-                        {(['ALL', 'UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(s => {
-                            const isActive = activeTab === s;
-                            return (
-                                <button
-                                    key={s}
-                                    onClick={() => setActiveTab(s)}
-                                    className={`snap-center px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${isActive
-                                        ? 'bg-primary text-brand-yellow shadow-md'
-                                        : 'bg-white/60 text-primary/60 border border-primary/10'
-                                        }`}
-                                >
-                                    {s === 'ALL' ? 'Semua' : STATUS_LABEL[s]}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </header>
+                    <ChipRow label="Status">
+                        {(['ALL', 'UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(s => (
+                            <button key={s} onClick={() => setActiveTab(s)} className={chipClass(activeTab === s)}>
+                                {s === 'ALL' ? 'Semua' : STATUS_LABEL[s]}
+                            </button>
+                        ))}
+                    </ChipRow>
+                </PageHeader>
 
                 {/* Content */}
                 <main className="flex-1 px-5 pb-32 pt-4 space-y-4 overflow-y-auto">
@@ -742,7 +759,7 @@ export default function OrdersPage() {
                                                 <div className="flex items-center gap-2">
                                                     <LuPackage className="text-primary/50 text-sm shrink-0" />
                                                     <span className="text-sm font-semibold text-primary">
-                                                        {item.qty}x {item.box_type === 'FULL' ? 'Box Besar' : item.box_type === 'HALF' ? 'Box Kecil' : 'Hampers'}
+                                                        {item.qty}x {boxLabelID(item.box_type)}
                                                         <span className="text-primary/50 font-medium"> {item.name}</span>
                                                     </span>
                                                 </div>
@@ -794,6 +811,22 @@ export default function OrdersPage() {
                                             <span className="font-bold text-primary">
                                                 {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })}
                                             </span>
+                                        </div>
+                                        {order.biteship_order_id && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-primary/50">Pengiriman Biteship</span>
+                                                <span className="font-bold text-primary">{order.biteship_order_id}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between items-center text-xs">
+                                            <span className="text-primary/50">Stok bahan baku</span>
+                                            <button
+                                                onClick={() => recalculateStock(order.id)}
+                                                className="font-bold text-primary/70 bg-white border border-primary/10 hover:bg-primary/10 px-2 py-1 rounded-lg"
+                                                title="Hitung ulang potongan stok dari item & resep saat ini"
+                                            >
+                                                Hitung ulang
+                                            </button>
                                         </div>
                                         {order.transfer_img_url && (
                                             <div className="pt-2 flex justify-between items-start text-xs border-t border-primary/5 mt-2">
@@ -858,10 +891,11 @@ export default function OrdersPage() {
                                                             customer_name: order.customer_name,
                                                             customer_phone: order.customer_phone,
                                                             pickup_date: order.pickup_date,
-                                                            pickup_time: order.pickup_time?.slice(0, 5) || '11:00',
+                                                            pickup_time: order.pickup_time?.slice(0, 5) || ':',
                                                             note: order.note || '',
                                                             payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'CASH',
-                                                            pesanan: order.items.map(i => ({ box_type: i.box_type as 'FULL' | 'HALF' | 'HAMPERS', name: i.name, qty: i.qty })),
+                                                            store_id: order.store_id,
+                                                            pesanan: order.items.map(i => ({ box_type: i.box_type as BoxType, name: i.name, qty: i.qty, variant_ids: i.variant_ids })),
                                                         });
                                                         setShowSheet(true);
                                                     }}
@@ -939,6 +973,21 @@ export default function OrdersPage() {
                             {/* Form */}
                             <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
 
+                                {/* Store — quota & opening hours depend on it. Not changeable on edit. */}
+                                {stores.length > 1 && (
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Store *</label>
+                                        <select
+                                            value={form.store_id ?? ''}
+                                            disabled={!!editingOrder}
+                                            onChange={e => setForm(f => ({ ...f, store_id: Number(e.target.value), pickup_time: ':' }))}
+                                            className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-bold focus:outline-none focus:border-primary/30 disabled:opacity-60"
+                                        >
+                                            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
                                 {/* Customer Name */}
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nama Pelanggan *</label>
@@ -1014,9 +1063,9 @@ export default function OrdersPage() {
                                                             <div className="text-[10px] font-black uppercase tracking-widest text-primary/40 text-center">Jam</div>
                                                         </div>
                                                         <div className="p-1.5 space-y-0.5">
-                                                            {[11, 12, 13, 14, 15, 16, 17].map(hNum => {
-                                                                const hStr = String(hNum).padStart(2, '0') + ':00';
-                                                                const hDisplay = String(hNum).padStart(2, '0');
+                                                            {/* Hours = the store's active hourly slots (configured in /config → Kuota). */}
+                                                            {[...new Set(availableHours.filter(h => h.is_active).map(h => String(h.time_str).slice(0, 2)))].sort().map(hDisplay => {
+                                                                const hStr = `${hDisplay}:00`;
                                                                 const isSelected = form.pickup_time.split(':')[0] === hDisplay;
                                                                 const isAvail = getIsHourAvailable(hStr);
 
@@ -1056,7 +1105,8 @@ export default function OrdersPage() {
                                                                         key={m}
                                                                         type="button"
                                                                         onClick={() => {
-                                                                            const hh = form.pickup_time.split(':')[0] || '11';
+                                                                            const hh = form.pickup_time.split(':')[0];
+                                                                            if (!hh) return; // pick an hour first
                                                                             setForm(f => ({ ...f, pickup_time: `${hh}:${m}` }));
                                                                         }}
                                                                         className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected
@@ -1105,14 +1155,13 @@ export default function OrdersPage() {
                                                 {/* Box Type Cards and Qty */}
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1">
-                                                        {(['FULL', 'HALF', 'HAMPERS'] as const).map(bt => {
+                                                        {BOX_TYPES.filter(bt => menus.some(m => m.name === bt && m.is_active !== false && (m.store_ids ?? []).includes(form.store_id ?? -1))).map(bt => {
                                                             const isSelected = item.box_type === bt;
                                                             const menuData = menus.find(m => m.name === bt);
                                                             const priceStr = menuData ? `Rp ${(menuData.price / 1000)}k` : '...';
 
                                                             let Icon = LuLayoutGrid;
                                                             if (bt === 'HALF') Icon = LuLayoutTemplate;
-                                                            if (bt === 'HAMPERS') Icon = LuGift;
 
                                                             return (
                                                                 <button
@@ -1122,12 +1171,11 @@ export default function OrdersPage() {
                                                                             ...f,
                                                                             pesanan: f.pesanan.map((p, i) => {
                                                                                 if (i !== idx) return p;
-                                                                                let newP = { ...p, box_type: bt };
-                                                                                if (bt === 'HALF' && p.name && p.name.startsWith('Mix ')) {
-                                                                                    const parts = p.name.replace('Mix ', '').split(' Dan ');
-                                                                                    if (parts.length > 1) {
-                                                                                        newP.name = parts[0];
-                                                                                    }
+                                                                                const newP = { ...p, box_type: bt };
+                                                                                // Switching to HALF keeps only the first of several mixed flavors.
+                                                                                const chosen = selectedVariants(p, variants);
+                                                                                if (bt === 'HALF' && chosen.length > 1) {
+                                                                                    return { ...newP, ...buildSelection(chosen.slice(0, 1)) };
                                                                                 }
                                                                                 return newP;
                                                                             })
@@ -1163,100 +1211,21 @@ export default function OrdersPage() {
                                                     </div>
                                                 </div>
                                             </div>
-                                            {/* Item name as Checkboxes (Max 2 for FULL/HAMPERS) */}
+                                            {/* Item name as Checkboxes (Max 2 for FULL) */}
                                             <div className="pt-2">
                                                 <label className="text-[10px] font-black uppercase tracking-wider text-primary/60 block mb-2">
-                                                    Pilih Rasa (Max {item.box_type === 'HAMPERS' ? 3 : item.box_type === 'FULL' ? 2 : 1} Varian)
+                                                    Pilih Rasa (Max {maxFlavorsFor(menus, item.box_type)} Varian)
                                                 </label>
                                                 <div className="grid grid-cols-2 lg:grid-cols-2 gap-2">
-                                                    {(() => {
-                                                        const activeVariants = variants.filter(v => v.is_active);
-                                                        const regularVariants = activeVariants.filter(v => !(v.name || v.variant_name || '').toLowerCase().startsWith('mix 3'));
-                                                        const mix3Variants = activeVariants.filter(v => (v.name || v.variant_name || '').toLowerCase().startsWith('mix 3'));
-
-                                                        let selectedFlavors: string[] = [];
-                                                        if (item.name) {
-                                                            if (item.name.startsWith('Mix ') && !item.name.toLowerCase().startsWith('mix 3')) {
-                                                                selectedFlavors = item.name.replace('Mix ', '').split(' Dan ');
-                                                            } else {
-                                                                selectedFlavors = [item.name];
-                                                            }
-                                                        }
-
-                                                        const hasMix3Selected = selectedFlavors.some(f => f.toLowerCase().startsWith('mix 3'));
-                                                        const maxFlavors = item.box_type === 'HAMPERS' ? 3 : item.box_type === 'FULL' ? 2 : 1;
-
-                                                        return (
-                                                            <>
-                                                                {regularVariants.map(v => {
-                                                                    const vName = v.variant_name;
-                                                                    // Kraft logic
-                                                                    const vNameLower = (v.name || v.variant_name || '').toLowerCase();
-                                                                    const isKraftBomb = vNameLower.includes('kraf') && vNameLower.includes('bomb');
-                                                                    const isKraftCarnation = vNameLower.includes('kraf') && vNameLower.includes('carnation');
-                                                                    const isKraftDisabled = item.box_type === 'HAMPERS' && (isKraftBomb || isKraftCarnation);
-
-                                                                    const isChecked = selectedFlavors.includes(vName);
-                                                                    // If a Mix 3 is selected, ALL regular variants should be enabled so they can be clicked to switch
-                                                                    const isDisabled = isKraftDisabled || (!hasMix3Selected && !isChecked && selectedFlavors.length >= maxFlavors);
-
-                                                                    return (
-                                                                        <label key={v.id} className={`relative flex items-center gap-2 p-2 rounded-lg border-2 transition-all cursor-pointer ${isChecked ? 'border-primary bg-primary/5 text-primary' : isDisabled ? 'border-primary/5 bg-primary/5 text-primary/30 opacity-50 cursor-not-allowed' : 'border-primary/10 bg-white text-primary/70 hover:border-primary/30'}`}>
-                                                                            <input type="checkbox" className="peer sr-only" checked={isChecked} disabled={isDisabled} onChange={e => {
-                                                                                let newFlavors = [...selectedFlavors];
-                                                                                if (hasMix3Selected) newFlavors = []; // Clear Mix 3 if selecting regular
-
-                                                                                if (e.target.checked) {
-                                                                                    if (newFlavors.length < maxFlavors) newFlavors.push(vName);
-                                                                                } else {
-                                                                                    newFlavors = newFlavors.filter(f => f !== vName);
-                                                                                }
-
-                                                                                let newName = '';
-                                                                                if (newFlavors.length > 0) {
-                                                                                    newName = newFlavors.length > 1 ? `Mix ${[...newFlavors].sort().join(' Dan ')}` : newFlavors[0];
-                                                                                }
-                                                                                setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: newName } : p) }));
-                                                                            }} />
-                                                                            <div className={`w-4 h-4 rounded flex items-center justify-center border-2 transition-colors shrink-0 flex-none ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20 peer-focus-visible:border-primary/50'}`}>
-                                                                                {isChecked && <LuCheck className="text-[10px] stroke-[4]" />}
-                                                                            </div>
-                                                                            <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">{vName}</span>
-                                                                        </label>
-                                                                    );
-                                                                })}
-
-                                                                {item.box_type === 'FULL' && mix3Variants.length > 0 && (
-                                                                    <div className="col-span-2 mt-2 pt-2 border-t border-primary/10">
-                                                                        <div className="text-[10px] font-black uppercase tracking-widest text-primary/40 mb-2">Atau Pilih Paket Mix 3 (1 Centang untuk 1 Full Box)</div>
-                                                                        <div className="grid grid-cols-1 gap-2">
-                                                                            {mix3Variants.map(v => {
-                                                                                const vName = v.variant_name;
-                                                                                const isChecked = selectedFlavors.includes(vName);
-                                                                                // Disable if any other Mix 3 is chosen, or if ANY regular flavor is chosen
-                                                                                const hasRegularSelected = selectedFlavors.length > 0 && !hasMix3Selected;
-                                                                                const isDisabled = (!isChecked && hasMix3Selected) || hasRegularSelected;
-
-                                                                                return (
-                                                                                    <label key={v.id} className={`relative flex items-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isChecked ? 'border-primary bg-primary/5 text-primary' : isDisabled ? 'border-primary/5 bg-primary/5 text-primary/30 opacity-50 cursor-not-allowed' : 'border-primary/10 bg-white text-primary/70 hover:border-primary/30 hover:bg-primary/5'}`}>
-                                                                                        <input type="checkbox" className="peer sr-only" checked={isChecked} disabled={isDisabled} onChange={e => {
-                                                                                            // Mix 3 mutually exclusive override
-                                                                                            const newName = e.target.checked ? vName : '';
-                                                                                            setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, name: newName } : p) }));
-                                                                                        }} />
-                                                                                        <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 transition-colors shrink-0 flex-none ${isChecked ? 'bg-primary border-primary text-brand-yellow' : 'border-primary/20 peer-focus-visible:border-primary/50'}`}>
-                                                                                            {isChecked && <div className="w-2.5 h-2.5 rounded-full bg-brand-yellow" />}
-                                                                                        </div>
-                                                                                        <span className="text-sm font-extrabold leading-tight select-none flex-1 break-words text-left">{vName}</span>
-                                                                                    </label>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                            </>
-                                                        );
-                                                    })()}
+                                                    <FlavorPicker
+                                                            name={item.name}
+                                                            variantIds={item.variant_ids}
+                                                            variants={variants}
+                                                            maxFlavors={maxFlavorsFor(menus, item.box_type)}
+                                                            onChange={sel => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, ...sel } : p) }))}
+                                                            showImages={false}
+                                                            radiusClass="rounded-lg"
+                                                        />
                                                 </div>
                                                 {!item.name && (
                                                     <p className="text-[10px] text-red-500 font-bold mt-2">* Silahkan pilih minimal 1 rasa</p>

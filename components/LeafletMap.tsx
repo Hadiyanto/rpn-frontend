@@ -31,11 +31,13 @@ const DEST_ICON = new L.Icon({
     shadowSize: [41, 41],
 });
 
-// RPN store location
-const ORIGIN_LAT = -6.2602;
-const ORIGIN_LNG = 106.8475;
+// Map center when the store has no coordinates yet: Jakarta.
+const FALLBACK_CENTER: [number, number] = [-6.2, 106.816666];
 
 interface Props {
+    /** The store's coordinates (origin of the delivery). */
+    originLat?: number | string | null;
+    originLng?: number | string | null;
     destLat: number | null;
     destLng: number | null;
     onMapClick: (lat: number, lng: number) => void;
@@ -60,10 +62,12 @@ function RecenterOnDest({ lat, lng }: { lat: number | null; lng: number | null }
     return null;
 }
 
-export default function LeafletMap({ destLat, destLng, onMapClick }: Props) {
+export default function LeafletMap({ originLat, originLng, destLat, destLng, onMapClick }: Props) {
+    const hasOrigin = originLat != null && originLng != null && originLat !== '' && originLng !== '';
+    const origin: [number, number] = hasOrigin ? [Number(originLat), Number(originLng)] : FALLBACK_CENTER;
     return (
         <MapContainer
-            center={[ORIGIN_LAT, ORIGIN_LNG]}
+            center={origin}
             zoom={13}
             style={{ width: '100%', height: '100%', borderRadius: '1rem' }}
         >
@@ -74,8 +78,8 @@ export default function LeafletMap({ destLat, destLng, onMapClick }: Props) {
             <ClickHandler onMapClick={onMapClick} />
             <RecenterOnDest lat={destLat} lng={destLng} />
 
-            {/* Origin marker — RPN store */}
-            <Marker position={[ORIGIN_LAT, ORIGIN_LNG]} icon={ORIGIN_ICON} />
+            {/* Origin marker — the store */}
+            {hasOrigin && <Marker position={origin} icon={ORIGIN_ICON} />}
 
             {/* Destination marker */}
             {destLat && destLng && (

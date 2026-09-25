@@ -3,6 +3,7 @@
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { BRAND_NAME } from '@/utils/brand';
 import {
   LuChevronLeft,
   LuStore,
@@ -44,7 +45,7 @@ export default function LoginPage() {
       <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-white shadow-2xl">
         <div className="h-4 w-full"></div>
         <div className="flex items-center bg-transparent p-4 pb-6 justify-center">
-          <h2 className="text-primary text-base font-bold leading-tight tracking-tight text-center">Raja Pisang Nugget</h2>
+          <h2 className="text-primary text-base font-bold leading-tight tracking-tight text-center">{BRAND_NAME}</h2>
         </div>
 
         <div className="flex flex-col flex-1 px-6 pt-6 overflow-y-auto justify-center">

@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
-import { LuMenu, LuBanknote, LuSettings, LuPlus, LuTrash, LuSave } from 'react-icons/lu';
+import { LuBanknote, LuSettings, LuPlus, LuTrash, LuSave } from 'react-icons/lu';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 import Toast from '@/components/Toast';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
+import PageHeader from '@/components/PageHeader';
 
 export default function SalaryConfigPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -90,25 +91,7 @@ export default function SalaryConfigPage() {
             />
 
             {/* Header */}
-            <div className="sticky top-0 z-40 bg-brand-yellow/90 backdrop-blur-md border-b border-primary/10">
-                <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => setSidebarOpen(true)}
-                            className="p-2 -ml-2 rounded-xl hover:bg-black/5 transition-colors"
-                        >
-                            <LuMenu className="text-2xl text-primary" />
-                        </button>
-                        <div>
-                            <h1 className="text-xl font-extrabold text-primary flex items-center gap-2">
-                                <LuSettings className="text-primary/70" />
-                                Setting Gaji
-                            </h1>
-                            <p className="text-xs font-bold text-primary/60">Atur rentang komisi box</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <PageHeader title="Setting Gaji" subtitle="Atur rentang komisi box" icon={<LuSettings />} onMenu={() => setSidebarOpen(true)} />
 
             {/* Content */}
             <div className="p-5 pb-24 space-y-4">

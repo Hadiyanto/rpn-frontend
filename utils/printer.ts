@@ -1,4 +1,5 @@
 import EscPosEncoder from 'esc-pos-encoder';
+import { BRAND_NAME } from '@/utils/brand';
 
 interface PrintItem {
     name: string;
@@ -126,7 +127,8 @@ export const printReceipt = async (data: ReceiptData) => {
     }
 };
 export interface OrderPrintItem {
-    box_type: 'FULL' | 'HALF' | 'HAMPERS';
+    // Historical orders may still contain retired types such as 'HAMPERS'.
+    box_type: string;
     name: string;
     qty: number;
 }
@@ -187,7 +189,7 @@ export const printOrder = async (data: OrderReceiptData) => {
         let chain = encoder
             .initialize()
             .bold(true)
-            .line(c('Raja Pisang Nugget'))
+            .line(c(BRAND_NAME))
             .bold(false)
             .line(c('-- ORDER --'))
             .align('left')
@@ -205,7 +207,7 @@ export const printOrder = async (data: OrderReceiptData) => {
 
         const fullItems = data.items.filter(i => i.box_type === 'FULL');
         const halfItems = data.items.filter(i => i.box_type === 'HALF');
-        const hampersItems = data.items.filter(i => i.box_type === 'HAMPERS');
+        const otherItems = data.items.filter(i => i.box_type !== 'FULL' && i.box_type !== 'HALF');
 
         if (fullItems.length > 0) {
             chain = chain.bold(true).line('[ FULL BOX ]').bold(false);
@@ -230,16 +232,12 @@ export const printOrder = async (data: OrderReceiptData) => {
             chain = chain.newline();
         }
 
-        if (hampersItems.length > 0) {
+        if (otherItems.length > 0) {
             if (fullItems.length > 0 || halfItems.length > 0) chain = chain.line('');
-            chain = chain.bold(true).line('[ HAMPERS ]').bold(false);
-            hampersItems.forEach(item => {
-                chain = chain.line(`  ${item.qty}x ${item.name}`);
+            otherItems.forEach(item => {
+                chain = chain.line(`  ${item.qty}x [${item.box_type}] ${item.name}`);
                 chain = chain.newline();
             });
-            const totalHampers = hampersItems.reduce((s, i) => s + i.qty, 0);
-            chain = chain.line(`  Total: ${totalHampers} box`);
-            chain = chain.newline();
         }
 
         chain = chain.line('--------------------------------');

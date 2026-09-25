@@ -4,7 +4,7 @@ import { useState, useEffect, use } from 'react';
 import { LuUpload, LuCheck, LuArrowLeft, LuPackage, LuReceipt } from 'react-icons/lu';
 import { useRouter } from 'next/navigation';
 import { fetchJson } from '@/utils/fetchJson';
-import { API_URL, BCA_ACCOUNT_NUMBER, BCA_ACCOUNT_NAME } from '@/utils/config';
+import { API_URL } from '@/utils/config';
 
 interface OrderItem {
     id: number;
@@ -16,19 +16,31 @@ interface OrderItem {
 interface Order {
     id: number;
     customer_name: string;
-    customer_phone: string;
     pickup_date: string;
+    store_id: number | null;
     items: OrderItem[];
 }
 
+interface StoreBank {
+    qris_image_url: string | null;
+    bank_name: string | null;
+    bank_account_number: string | null;
+    bank_account_name: string | null;
+}
+
+// New WhatsApp links carry the order's unguessable public token; old links carry the numeric id.
+const isPublicToken = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
 export default function BuktiTransferPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
+    const orderPath = isPublicToken(id) ? `/api/order/public/${id}` : `/api/order/${id}`;
     const router = useRouter();
     const [uploading, setUploading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [order, setOrder] = useState<Order | null>(null);
     const [menus, setMenus] = useState<any[]>([]);
+    const [store, setStore] = useState<StoreBank | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -36,13 +48,20 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
         const fetchData = async () => {
             try {
                 const [orderRes, menuRes] = await Promise.all([
-                    fetchJson(`${API_URL}/api/order/${id}`),
+                    fetchJson(`${API_URL}${orderPath}`),
                     fetchJson(`${API_URL}/api/menu`)
                 ]);
                 if (cancelled) return;
 
                 if (orderRes.status === 'ok') setOrder(orderRes.data);
                 if (menuRes.status === 'ok') setMenus(menuRes.data);
+
+                // Transfer account belongs to the store the order was placed at.
+                const storeId = orderRes.status === 'ok' ? orderRes.data.store_id : null;
+                if (storeId) {
+                    const storeRes = await fetchJson(`${API_URL}/api/stores/${storeId}`).catch(() => null);
+                    if (!cancelled && storeRes?.status === 'ok') setStore(storeRes.data);
+                }
             } catch (err) {
                 console.error('Gagal memuat data order', err);
             } finally {
@@ -52,7 +71,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
 
         fetchData();
         return () => { cancelled = true; };
-    }, [id]);
+    }, [id, orderPath]);
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -72,13 +91,13 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
             const uploadJson = await uploadRes.json();
 
             if (uploadJson.status !== 'ok') {
-                setErrorMsg('Gagal mengunggah gambar. Silakan coba lagi.');
+                setErrorMsg(uploadJson.message || 'Gagal mengunggah gambar. Silakan coba lagi.');
                 setUploading(false);
                 return;
             }
 
             // 2. Patch Order with the new image URL
-            const updateRes = await fetch(`${API_URL}/api/order/${id}/transfer-img-url`, {
+            const updateRes = await fetch(`${API_URL}${orderPath}/transfer-img-url`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ transfer_img_url: uploadJson.imageUrl }),
@@ -170,20 +189,24 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                             <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold text-center">Data pesanan tidak ditemukan.</div>
                         )}
 
-                        <div className="bg-primary/5 rounded-2xl border border-primary/10 p-4">
-                            <p className="text-[10px] font-black uppercase text-primary/60 mb-3 text-center tracking-wider">
-                                Scan QR untuk Bayar (QRIS)
-                            </p>
-                            <div className="flex justify-center bg-white p-2 rounded-xl border border-primary/10 shadow-sm">
-                                <img src="/images/qris-placeholder.svg" alt="QRIS Pembayaran" width={180} height={180} className="rounded-lg" />
+                        {store?.qris_image_url && (
+                            <div className="bg-primary/5 rounded-2xl border border-primary/10 p-4">
+                                <p className="text-[10px] font-black uppercase text-primary/60 mb-3 text-center tracking-wider">
+                                    Scan QR untuk Bayar (QRIS)
+                                </p>
+                                <div className="flex justify-center bg-white p-2 rounded-xl border border-primary/10 shadow-sm">
+                                    <img src={store.qris_image_url} alt="QRIS Pembayaran" width={180} height={180} className="rounded-lg" />
+                                </div>
                             </div>
-                        </div>
+                        )}
 
-                        <div className="bg-blue-50 border-2 border-dashed border-blue-200 rounded-2xl p-4 text-center space-y-2">
-                            <h3 className="text-xs font-bold text-blue-900">Atau Transfer ke Rekening BCA</h3>
-                            <p className="font-black text-xl text-blue-600 tracking-wider">{BCA_ACCOUNT_NUMBER}</p>
-                            <p className="text-[10px] font-bold text-blue-800 uppercase tracking-widest">A/N {BCA_ACCOUNT_NAME}</p>
-                        </div>
+                        {store?.bank_account_number && (
+                            <div className="bg-blue-50 border-2 border-dashed border-blue-200 rounded-2xl p-4 text-center space-y-2">
+                                <h3 className="text-xs font-bold text-blue-900">Atau Transfer ke Rekening {store.bank_name}</h3>
+                                <p className="font-black text-xl text-blue-600 tracking-wider">{store.bank_account_number}</p>
+                                <p className="text-[10px] font-bold text-blue-800 uppercase tracking-widest">A/N {store.bank_account_name}</p>
+                            </div>
+                        )}
 
                         {errorMsg && (
                             <div className="bg-red-50 text-red-600 text-sm font-bold p-3 rounded-xl border border-red-100 text-center">

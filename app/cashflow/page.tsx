@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useMenuPrices } from '@/hooks/useMenuPrices';
 import {
-    LuMenu,
+    LuArrowLeftRight,
     LuTrendingUp,
     LuTrendingDown,
     LuCalendarDays,
@@ -17,12 +18,14 @@ import {
     LuCalendar,
 } from 'react-icons/lu';
 import Sidebar from '@/components/Sidebar';
-import StoreFilter from '@/components/StoreFilter';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { formatChipDate, formatRupiah, getTodayStr } from '@/utils/format';
+import PageHeader, { ChipRow, chipClass } from '@/components/PageHeader';
+import StoreSwitcher from '@/components/StoreSwitcher';
 
 /* ─── Interfaces ────────────────────────────────────────────────────── */
 
@@ -58,21 +61,6 @@ interface Pengeluaran {
 
 /* ─── Helpers ───────────────────────────────────────────────────────── */
 
-const PRICE: Record<'FULL' | 'HALF', number> = { FULL: 65000, HALF: 35000 };
-
-function orderRevenue(order: Order): number {
-    return order.items.reduce((sum, i) => sum + i.qty * PRICE[i.box_type], 0);
-}
-
-function formatRupiah(n: number): string {
-    return 'Rp ' + n.toLocaleString('id-ID');
-}
-
-function getTodayStr() {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
 const DAY_ID: Record<number, string> = {
     0: 'Minggu', 1: 'Senin', 2: 'Selasa', 3: 'Rabu', 4: 'Kamis', 5: 'Jumat', 6: 'Sabtu',
 };
@@ -81,12 +69,6 @@ function formatDate(dateStr: string) {
     const date = new Date(`${dateStr}T00:00:00+07:00`);
     const day = date.toLocaleDateString('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
     return `${day}, ${date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
-}
-
-function formatChipDate(dateStr: string) {
-    const date = new Date(`${dateStr}T00:00:00+07:00`);
-    const day = date.toLocaleDateString('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
-    return `${day.slice(0, 3)} / ${date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' })}`;
 }
 
 const EXPENSE_CATEGORIES = ['Bahan Baku', 'Operasional', 'Gaji', 'Packaging', 'Transportasi', 'Lainnya'];
@@ -99,6 +81,8 @@ export default function CashflowPage() {
     const [loading, setLoading] = useState(true);
     const [showSidebar, setShowSidebar] = useState(false);
     const userRoleData = useUserRole('cashflow');
+    const { priceOf, loading: pricesLoading } = useMenuPrices();
+    const orderRevenue = (order: Order) => order.items.reduce((sum, i) => sum + i.qty * priceOf(i.box_type), 0);
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
     const [activeTab, setActiveTab] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
     const [showAllItems, setShowAllItems] = useState(false);
@@ -230,26 +214,14 @@ export default function CashflowPage() {
                 <Sidebar open={showSidebar} onClose={() => setShowSidebar(false)} allowedPages={userRoleData.allowedPages} userEmail={userRoleData.email} userRole={userRoleData.role} />
 
                 {/* Header */}
-                <header className="sticky top-0 z-50 bg-brand-yellow/95 backdrop-blur-md border-b border-primary/10 px-5 pt-5 pb-4 space-y-4">
-                    <div className="flex justify-between items-center">
-                        <button
-                            onClick={() => setShowSidebar(true)}
-                            className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center border border-primary/10 shadow-sm"
-                        >
-                            <LuMenu className="text-primary text-lg" />
-                        </button>
-                        <h1 className="text-2xl font-extrabold tracking-tight text-primary">Cash Flow</h1>
-                        <StoreFilter stores={stores} value={storeFilter} onChange={setStoreFilter} />
-                    </div>
+                <PageHeader title="Cash Flow" subtitle="Pemasukan dan pengeluaran" icon={<LuArrowLeftRight />} onMenu={() => setShowSidebar(true)}>
+                    <StoreSwitcher stores={stores} value={storeFilter} onChange={setStoreFilter} allowAll />
 
                     {/* Date filter chips */}
-                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    <ChipRow label="Tanggal">
                         <button
                             onClick={() => setActiveDate('ALL')}
-                            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${activeDate === 'ALL'
-                                ? 'bg-primary text-brand-yellow shadow-md'
-                                : 'bg-white/60 text-primary/60 border border-primary/10'
-                                }`}
+                            className={chipClass(activeDate === 'ALL')}
                         >
                             Semua
                         </button>
@@ -257,32 +229,29 @@ export default function CashflowPage() {
                             <button
                                 key={date}
                                 onClick={() => setActiveDate(date)}
-                                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${activeDate === date
-                                    ? 'bg-primary text-brand-yellow shadow-md'
-                                    : 'bg-white/60 text-primary/60 border border-primary/10'
-                                    }`}
+                                className={chipClass(activeDate === date)}
                             >
                                 {formatChipDate(date)}
                             </button>
                         ))}
-                    </div>
-                </header>
+                    </ChipRow>
+                </PageHeader>
 
                 <main className="flex-1 px-4 py-5 space-y-4 pb-24">
-                    {loading && (
+                    {(loading || pricesLoading) && (
                         <div className="flex justify-center pt-20">
                             <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
                         </div>
                     )}
 
-                    {!loading && doneOrders.length === 0 && expenses.length === 0 && (
+                    {!loading && !pricesLoading && doneOrders.length === 0 && expenses.length === 0 && (
                         <div className="flex flex-col items-center justify-center pt-24 gap-3 text-primary/40">
                             <LuClipboardList className="text-5xl" />
                             <p className="text-sm font-semibold">Belum ada data</p>
                         </div>
                     )}
 
-                    {!loading && (doneOrders.length > 0 || expenses.length > 0) && (
+                    {!loading && !pricesLoading && (doneOrders.length > 0 || expenses.length > 0) && (
                         <>
                             {/* Hero Card */}
                             <section className="bg-primary rounded-3xl p-6 shadow-xl relative overflow-hidden">

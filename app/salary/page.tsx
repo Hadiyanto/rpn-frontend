@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
-import { LuMenu, LuBanknote, LuSettings, LuCalendarSearch, LuWallet } from 'react-icons/lu';
+import { LuBanknote, LuSettings, LuCalendarSearch, LuWallet } from 'react-icons/lu';
 import { MdClose } from 'react-icons/md';
 import { useUserRole } from '@/hooks/useUserRole';
 import DatePicker from 'react-datepicker';
@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/useToast';
 import Toast from '@/components/Toast';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
+import PageHeader from '@/components/PageHeader';
 
 export default function SalaryPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -123,25 +124,7 @@ export default function SalaryPage() {
             />
 
             {/* Header */}
-            <div className="sticky top-0 z-40 bg-brand-yellow/90 backdrop-blur-md border-b border-primary/10">
-                <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => setSidebarOpen(true)}
-                            className="p-2 -ml-2 rounded-xl hover:bg-black/5 transition-colors"
-                        >
-                            <LuMenu className="text-2xl text-primary" />
-                        </button>
-                        <div>
-                            <h1 className="text-xl font-extrabold text-primary flex items-center gap-2">
-                                <LuBanknote className="text-primary/70" />
-                                Gaji Karyawan
-                            </h1>
-                            <p className="text-xs font-bold text-primary/60">Generate dan riwayat gaji harian</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <PageHeader title="Gaji Karyawan" subtitle="Generate dan riwayat gaji harian" icon={<LuBanknote />} onMenu={() => setSidebarOpen(true)} />
 
             {/* Content */}
             <div className="p-5 pb-24 space-y-6">

@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { LuChevronLeft, LuHistory } from 'react-icons/lu';
+import { LuHistory } from 'react-icons/lu';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
+import PageHeader from '@/components/PageHeader';
 
 export default function StockHistoryPage() {
     const router = useRouter();
@@ -49,20 +50,7 @@ export default function StockHistoryPage() {
     return (
         <div className="bg-brand-white min-h-screen font-display text-primary pb-20 p-0 m-0">
             {/* Header */}
-            <div className="sticky top-0 z-40 bg-brand-yellow/90 backdrop-blur-md border-b border-primary/10">
-                <div className="flex items-center px-4 py-4 gap-3">
-                    <button
-                        onClick={() => router.back()}
-                        className="p-2 bg-white rounded-xl shadow-sm border border-gray-100 text-primary hover:bg-gray-50 transition-colors"
-                    >
-                        <LuChevronLeft className="text-xl" />
-                    </button>
-                    <div>
-                        <h1 className="text-lg font-extrabold text-primary leading-tight">Riwayat Stok</h1>
-                        <p className="text-[10px] font-black uppercase text-primary/50 tracking-wider">Pergerakan Barang</p>
-                    </div>
-                </div>
-            </div>
+            <PageHeader title="Riwayat Stok" subtitle="Pergerakan barang" icon={<LuHistory />} onBack={() => router.back()} />
 
             {/* Content gap */}
             <div className="p-4 space-y-4">
@@ -108,6 +96,21 @@ export default function StockHistoryPage() {
                                     {h.notes && (
                                         <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-100 mt-1">
                                             <p className="text-xs font-medium text-gray-600">{h.notes}</p>
+                                        </div>
+                                    )}
+                                    {(h.order_id || h.total_price != null) && (
+                                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                            {h.order_id && (
+                                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                                                    Otomatis · Order #{h.order_id}
+                                                </span>
+                                            )}
+                                            {h.total_price != null && (
+                                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-green-50 text-green-700">
+                                                    Beli Rp {Number(h.total_price).toLocaleString('id-ID')}
+                                                    {Number(h.qty_change) > 0 && ` · Rp ${(Number(h.total_price) / Number(h.qty_change)).toLocaleString('id-ID', { maximumFractionDigits: 2 })}/unit`}
+                                                </span>
+                                            )}
                                         </div>
                                     )}
                                 </div>
