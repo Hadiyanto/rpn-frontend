@@ -98,11 +98,16 @@ export default function StockHistoryPage() {
                                             <p className="text-xs font-medium text-gray-600">{h.notes}</p>
                                         </div>
                                     )}
-                                    {(h.order_id || h.total_price != null) && (
+                                    {(h.order_id || h.total_price != null || h.unit_cost != null) && (
                                         <div className="flex flex-wrap gap-1.5 mt-1.5">
                                             {h.order_id && (
                                                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                                                     Otomatis · Order #{h.order_id}
+                                                </span>
+                                            )}
+                                            {h.unit_cost != null && (
+                                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/5 text-primary/70" title="Harga modal per satuan saat mutasi ini">
+                                                    @ Rp {Number(h.unit_cost).toLocaleString('id-ID', { maximumFractionDigits: 2 })}/unit
                                                 </span>
                                             )}
                                             {h.total_price != null && (

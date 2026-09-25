@@ -165,7 +165,7 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                 <span className="text-sm font-extrabold text-primary tabular-nums">Box Kecil {hpp.HALF ? formatRupiah(Math.round(hpp.HALF.hpp)) : '…'}</span>
                 {missingNames.length > 0 && (
                     <span className="w-full text-xs font-semibold text-red-600">
-                        Harga beli belum diisi: {missingNames.join(', ')} (dihitung Rp 0). Isi lewat Stok Masuk + Total Harga Beli di halaman Stok.
+                        Harga modal belum diisi: {missingNames.join(', ')} (dihitung Rp 0). Isi di halaman Stok → ikon pensil bahan → Harga modal.
                     </span>
                 )}
             </div>

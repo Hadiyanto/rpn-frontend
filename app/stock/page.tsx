@@ -29,6 +29,10 @@ export default function StockPage() {
     const [newItemName, setNewItemName] = useState('');
     const [newItemUnit, setNewItemUnit] = useState('gram');
     const [newItemQty, setNewItemQty] = useState('');
+    // Purchase price: "Rp {priceTotal} for {priceAmount} {unit}" → price per unit (HPP).
+    const [priceTotal, setPriceTotal] = useState('');
+    const [priceAmount, setPriceAmount] = useState('');
+    const [currentPricePerUnit, setCurrentPricePerUnit] = useState<number | null>(null);
     // null = creating a new item; otherwise the id of the item being edited.
     const [editingStockId, setEditingStockId] = useState<number | null>(null);
 
@@ -85,18 +89,33 @@ export default function StockPage() {
         setNewItemName('');
         setNewItemUnit('gram');
         setNewItemQty('');
+        setPriceTotal('');
+        setPriceAmount('');
+        setCurrentPricePerUnit(null);
     };
+
+    // Amount defaults to the initial stock when creating ("bought 5000 g for Rp 700.000").
+    const effectivePriceAmount = priceAmount.trim() || (!editingStockId ? newItemQty.trim() : '');
+    const computedPricePerUnit = (() => {
+        const total = parseFloat(priceTotal);
+        const amount = parseFloat(effectivePriceAmount);
+        return total >= 0 && amount > 0 ? total / amount : null;
+    })();
+    const formatPerUnit = (n: number) => `Rp ${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
 
     const openCreateItem = () => {
         closeItemModal();
         setIsCreateOpen(true);
     };
 
-    const openEditItem = (stock: { id: number; item_name?: string; unit?: string | null }) => {
+    const openEditItem = (stock: { id: number; item_name?: string; unit?: string | null; price_per_unit?: number | null }) => {
         setEditingStockId(stock.id);
         setNewItemName(stock.item_name ?? '');
         setNewItemUnit(stock.unit ?? 'gram');
         setNewItemQty('');
+        setPriceTotal('');
+        setPriceAmount('');
+        setCurrentPricePerUnit(stock.price_per_unit ?? null);
         setIsCreateOpen(true);
     };
 
@@ -105,12 +124,21 @@ export default function StockPage() {
             showToast('⚠️ Peringatan', 'Nama bahan dan satuan wajib diisi.', 'error');
             return;
         }
+        if (priceTotal.trim() && computedPricePerUnit === null) {
+            showToast('⚠️ Peringatan', `Isi juga jumlah (${newItemUnit}) yang didapat dari harga tersebut.`, 'error');
+            return;
+        }
         try {
             const json = editingStockId
                 ? await fetchJson(`${API_URL}/api/stocks/${editingStockId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ item_name: newItemName.trim(), unit: newItemUnit.trim() }),
+                    body: JSON.stringify({
+                        item_name: newItemName.trim(),
+                        unit: newItemUnit.trim(),
+                        // Only sent when a new purchase price was entered; otherwise the stored one stays.
+                        ...(computedPricePerUnit !== null ? { price_per_unit: computedPricePerUnit } : {}),
+                    }),
                 })
                 : await fetchJson(`${API_URL}/api/stocks`, {
                     method: 'POST',
@@ -120,6 +148,7 @@ export default function StockPage() {
                         unit: newItemUnit.trim(),
                         store_id: activeStoreId,
                         qty: newItemQty ? parseFloat(newItemQty) : 0,
+                        price_per_unit: computedPricePerUnit,
                     }),
                 });
             if (json.status === 'ok') {
@@ -288,6 +317,52 @@ export default function StockPage() {
                             </div>
                             )}
                         </div>
+                        {/* Purchase price → price per unit, used for HPP */}
+                        <div className="space-y-2 rounded-2xl bg-primary/5 p-3">
+                            <div className="flex items-baseline justify-between gap-2">
+                                <label htmlFor="stock-price-total" className="text-[10px] font-black uppercase text-primary/60">Harga modal {editingStockId ? '' : '(opsional)'}</label>
+                                {editingStockId && (
+                                    <span className="text-[11px] font-bold text-primary/60">
+                                        Sekarang: {currentPricePerUnit != null ? `${formatPerUnit(currentPricePerUnit)}/${newItemUnit}` : 'belum ada'}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-primary/60">Rp</span>
+                                <input
+                                    id="stock-price-total"
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    value={priceTotal}
+                                    onChange={e => setPriceTotal(e.target.value)}
+                                    placeholder="700000"
+                                    className="flex-1 min-w-0 h-11 px-3 rounded-xl border border-primary/10 bg-white text-base sm:text-sm font-bold text-primary focus:outline-none"
+                                />
+                                <span className="text-sm font-bold text-primary/60">untuk</span>
+                                <input
+                                    id="stock-price-amount"
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    value={priceAmount}
+                                    onChange={e => setPriceAmount(e.target.value)}
+                                    placeholder={!editingStockId && newItemQty ? newItemQty : '5000'}
+                                    className="w-24 h-11 px-3 rounded-xl border border-primary/10 bg-white text-base sm:text-sm font-bold text-primary focus:outline-none"
+                                />
+                                <span className="text-sm font-bold text-primary/60 w-10 truncate">{newItemUnit}</span>
+                            </div>
+                            {editingStockId && (
+                                <p className="text-[11px] text-primary/50">Mengisi di sini langsung <b>mengganti</b> harga modal (untuk koreksi). Pembelian baru sebaiknya lewat Penyesuaian → Stok Masuk, supaya harga dirata-rata dengan sisa stok.</p>
+                            )}
+                            <p className="text-[11px] font-semibold text-primary/60">
+                                {computedPricePerUnit !== null
+                                    ? <>≈ <b className="text-primary">{formatPerUnit(computedPricePerUnit)}</b> / {newItemUnit}. Dipakai untuk menghitung HPP.</>
+                                    : !editingStockId && newItemQty
+                                        ? `Kosongkan "untuk" kalau harganya untuk stok awal (${newItemQty} ${newItemUnit}).`
+                                        : 'Contoh: Rp 700.000 untuk 5000 gram = Rp 140/gram.'}
+                            </p>
+                        </div>
                         <p className="text-[10px] font-bold text-primary/50">Hanya bahan bersatuan <b>gram</b> yang bisa dipakai di resep (auto-potong stok & HPP).</p>
                         <button
                             onClick={handleCreateStock}
@@ -339,10 +414,15 @@ export default function StockPage() {
                                         <span className="text-[10px] font-bold text-primary/50 uppercase">
                                             {stock.unit}
                                         </span>
-                                        {stock.price_per_unit != null && (
+                                        {stock.price_per_unit != null ? (
                                             <span className="text-[10px] font-bold text-primary/40 ml-1">
                                                 · Rp {Number(stock.price_per_unit).toLocaleString('id-ID', { maximumFractionDigits: 2 })}/{stock.unit}
                                             </span>
+                                        ) : (
+                                            <button type="button" onClick={e => { e.stopPropagation(); openEditItem(stock); }}
+                                                className="ml-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                                                Belum ada harga
+                                            </button>
                                         )}
                                     </div>
                                 </div>
@@ -447,11 +527,24 @@ export default function StockPage() {
                                         placeholder="mis. 700000"
                                         className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm font-bold text-primary focus:ring-2 focus:ring-primary/10 focus:border-primary outline-none transition-all placeholder:text-gray-300 placeholder:font-medium"
                                     />
-                                    {totalPrice && parseFloat(qtyChange) > 0 && !isNaN(parseFloat(totalPrice)) && (
-                                        <p className="text-xs font-medium text-gray-500 ml-1">
-                                            ≈ <span className="font-bold text-primary">Rp {(parseFloat(totalPrice) / parseFloat(qtyChange)).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</span> / {selectedStock.unit} — dipakai sebagai harga modal (HPP) terbaru
-                                        </p>
-                                    )}
+                                    {totalPrice && parseFloat(qtyChange) > 0 && !isNaN(parseFloat(totalPrice)) && (() => {
+                                        // Same rule as the backend: average what's on hand with this purchase.
+                                        const inQty = parseFloat(qtyChange);
+                                        const inCost = parseFloat(totalPrice) / inQty;
+                                        const onHand = Number(selectedStock.qty);
+                                        const current = selectedStock.price_per_unit == null ? null : Number(selectedStock.price_per_unit);
+                                        const next = current === null || !(onHand > 0) ? inCost : (onHand * current + inQty * inCost) / (onHand + inQty);
+                                        const rp = (n: number) => `Rp ${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
+                                        return (
+                                            <p className="text-xs font-medium text-gray-500 ml-1 space-y-0.5">
+                                                <span className="block">Harga beli ini ≈ <b className="text-primary">{rp(inCost)}</b> / {selectedStock.unit}</span>
+                                                <span className="block">
+                                                    Harga modal baru (rata-rata): <b className="text-primary">{rp(next)}</b> / {selectedStock.unit}
+                                                    {current !== null && onHand > 0 && <> — dari sisa {onHand} {selectedStock.unit} @ {rp(current)}</>}
+                                                </span>
+                                            </p>
+                                        );
+                                    })()}
                                 </div>
                             )}
 
