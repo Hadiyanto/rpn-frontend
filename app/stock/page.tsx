@@ -306,7 +306,7 @@ export default function StockPage() {
                             </div>
                             {!editingStockId && (
                             <div className="flex-1 space-y-1.5">
-                                <label className="text-[10px] font-black uppercase text-primary/60">Stok Awal</label>
+                                <label className="text-[10px] font-black uppercase text-primary/60">Input Stok</label>
                                 <input
                                     type="number"
                                     value={newItemQty}
@@ -359,7 +359,7 @@ export default function StockPage() {
                                 {computedPricePerUnit !== null
                                     ? <>≈ <b className="text-primary">{formatPerUnit(computedPricePerUnit)}</b> / {newItemUnit}. Dipakai untuk menghitung HPP.</>
                                     : !editingStockId && newItemQty
-                                        ? `Kosongkan "untuk" kalau harganya untuk stok awal (${newItemQty} ${newItemUnit}).`
+                                        ? `Kosongkan "untuk" kalau harganya untuk jumlah stok yang diinput (${newItemQty} ${newItemUnit}).`
                                         : 'Contoh: Rp 700.000 untuk 5000 gram = Rp 140/gram.'}
                             </p>
                         </div>
