@@ -60,6 +60,17 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
 
     const gramStocks = stocks.filter(s => s.store_id === storeId && isGram(s.unit));
     const [suggestions, setSuggestions] = useState<Suggestions>({});
+    // Base ingredients ("bahan dasar") are added to every box automatically, so they're not offered here.
+    const [baseItems, setBaseItems] = useState<{ stock_id: number; item_name: string }[]>([]);
+    const baseIds = new Set(baseItems.map(b => b.stock_id));
+
+    useEffect(() => {
+        let cancelled = false;
+        fetchJson(`${API_URL}/api/base-recipe?store_id=${storeId}`)
+            .then(json => { if (!cancelled) setBaseItems(json.data ?? []); })
+            .catch(() => undefined);
+        return () => { cancelled = true; };
+    }, [storeId]);
     const [copyTarget, setCopyTarget] = useState<Store | null>(null);
     const [copying, setCopying] = useState(false);
     const otherStores = stores.filter(s => s.id !== storeId);
@@ -174,6 +185,11 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                 <p className="text-[11px] font-bold uppercase tracking-wider text-primary/60">
                     Bahan untuk 1 Box Besar{storeName ? ` · ${storeName}` : ''}
                 </p>
+                {baseItems.length > 0 && (
+                    <p className="text-[11px] text-primary/50">
+                        Bahan dasar otomatis ikut di setiap box: <b>{baseItems.map(b => b.item_name).join(', ')}</b> (atur di atas daftar rasa).
+                    </p>
+                )}
                 {gramStocks.length === 0 && (
                     <p className="text-sm font-semibold text-red-600">Belum ada bahan bersatuan gram di store ini. Tambahkan dulu di halaman Stok.</p>
                 )}
@@ -196,7 +212,7 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                                     className={`${inputClass} appearance-none pr-9 truncate ${row.stock_id === '' ? 'text-primary/40' : ''}`}
                                 >
                                     <option value="">Pilih bahan…</option>
-                                    {gramStocks.map(s => (
+                                    {gramStocks.filter(s => !baseIds.has(s.id) || s.id === row.stock_id).map(s => (
                                         <option key={s.id} value={s.id}>{s.item_name}</option>
                                     ))}
                                 </select>

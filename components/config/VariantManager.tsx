@@ -8,6 +8,7 @@ import { API_URL } from '@/utils/config';
 import { uploadImage } from '@/utils/upload';
 import VariantRecipeEditor, { type StockItem } from '@/components/VariantRecipeEditor';
 import { shortStoreNames } from '@/components/StoreSwitcher';
+import BaseRecipeEditor from './BaseRecipeEditor';
 import { BackButton, Card, ConfirmBar, EmptyState, Field, SectionHeader, StatusPill, StickyActions, buttonDanger, buttonPrimary, buttonSecondary, inputClass } from './ui';
 
 type Notify = (title: string, message: string, type: 'success' | 'error') => void;
@@ -182,6 +183,7 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
                     </div>
                 }
             />
+            <BaseRecipeEditor storeId={activeStoreId} stores={stores} stocks={stocks} notify={notify} onChanged={onChanged} />
             {copyOpen && (
                 <Card className="mt-3 space-y-4">
                     <div className="flex items-start justify-between gap-3">
