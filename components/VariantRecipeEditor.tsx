@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LuCopy, LuPlus, LuTrash2 } from 'react-icons/lu';
+import { LuChevronDown, LuCopy, LuPlus, LuTrash2 } from 'react-icons/lu';
 import type { Store, Variant } from '@/types/menu';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
@@ -187,28 +187,35 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                         return (
                         <div key={i} className="space-y-1.5">
                         <div className="flex items-center gap-2">
-                            <select
-                                aria-label="Bahan"
-                                value={row.stock_id}
-                                onChange={e => pickIngredient(i, e.target.value ? Number(e.target.value) : '')}
-                                className={`${inputClass} flex-1 min-w-0`}
-                            >
-                                <option value="">Pilih bahan…</option>
-                                {gramStocks.map(s => (
-                                    <option key={s.id} value={s.id}>{s.item_name}</option>
-                                ))}
-                            </select>
-                            <input
-                                aria-label="Gram"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={row.qty_gram}
-                                onChange={e => updateRow(i, { qty_gram: e.target.value })}
-                                placeholder="gram"
-                                className={`${inputClass} w-24 text-right tabular-nums`}
-                            />
-                            <span className="text-xs font-bold text-primary/50 w-3">g</span>
+                            {/* Wrappers own the widths: inputClass is w-full, and iOS draws native selects oddly. */}
+                            <div className="relative flex-1 min-w-0">
+                                <select
+                                    aria-label="Bahan"
+                                    value={row.stock_id}
+                                    onChange={e => pickIngredient(i, e.target.value ? Number(e.target.value) : '')}
+                                    className={`${inputClass} appearance-none pr-9 truncate ${row.stock_id === '' ? 'text-primary/40' : ''}`}
+                                >
+                                    <option value="">Pilih bahan…</option>
+                                    {gramStocks.map(s => (
+                                        <option key={s.id} value={s.id}>{s.item_name}</option>
+                                    ))}
+                                </select>
+                                <LuChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary/50" />
+                            </div>
+                            <div className="relative w-24 shrink-0">
+                                <input
+                                    aria-label="Gram"
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    step="0.01"
+                                    value={row.qty_gram}
+                                    onChange={e => updateRow(i, { qty_gram: e.target.value })}
+                                    placeholder="0"
+                                    className={`${inputClass} pr-7 text-right tabular-nums`}
+                                />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-primary/50">g</span>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => setRows(prev => prev.filter((_, idx) => idx !== i))}
