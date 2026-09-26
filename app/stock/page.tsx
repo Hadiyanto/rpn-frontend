@@ -35,6 +35,10 @@ export default function StockPage() {
     const [currentPricePerUnit, setCurrentPricePerUnit] = useState<number | null>(null);
     // null = creating a new item; otherwise the id of the item being edited.
     const [editingStockId, setEditingStockId] = useState<number | null>(null);
+    // Ingredient names known in any store, offered as a dropdown when adding an item.
+    const [knownItems, setKnownItems] = useState<{ item_name: string; unit: string | null }[]>([]);
+    // true = typing a name that isn't in the dropdown yet.
+    const [customName, setCustomName] = useState(false);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedStock, setSelectedStock] = useState<any>(null);
@@ -92,6 +96,7 @@ export default function StockPage() {
         setPriceTotal('');
         setPriceAmount('');
         setCurrentPricePerUnit(null);
+        setCustomName(false);
     };
 
     // Amount defaults to the initial stock when creating ("bought 5000 g for Rp 700.000").
@@ -106,6 +111,32 @@ export default function StockPage() {
     const openCreateItem = () => {
         closeItemModal();
         setIsCreateOpen(true);
+        fetchJson(`${API_URL}/api/stocks`)
+            .then(json => setKnownItems(json.data ?? []))
+            .catch(() => setKnownItems([]));
+    };
+
+    // Names from every store, minus the ones this store already has.
+    const nameOptions = (() => {
+        const taken = new Set(stocks.map(s => String(s.item_name).trim().toLowerCase()));
+        const seen = new Map<string, { item_name: string; unit: string | null }>();
+        for (const item of knownItems) {
+            const key = item.item_name.trim().toLowerCase();
+            if (!taken.has(key) && !seen.has(key)) seen.set(key, item);
+        }
+        return [...seen.values()].sort((a, b) => a.item_name.localeCompare(b.item_name, 'id'));
+    })();
+    const NEW_NAME = '__new__';
+
+    const pickName = (value: string) => {
+        if (value === NEW_NAME) {
+            setCustomName(true);
+            setNewItemName('');
+            return;
+        }
+        const item = nameOptions.find(o => o.item_name === value);
+        setNewItemName(value);
+        if (item?.unit) setNewItemUnit(item.unit);
     };
 
     const openEditItem = (stock: { id: number; item_name?: string; unit?: string | null; price_per_unit?: number | null }) => {
@@ -282,12 +313,34 @@ export default function StockPage() {
                         <p className="text-xs font-bold text-primary/50">Store: {stores.find(s => s.id === activeStoreId)?.name}</p>
                         <div className="space-y-1.5">
                             <label className="text-[10px] font-black uppercase text-primary/60">Nama Bahan</label>
-                            <input
-                                value={newItemName}
-                                onChange={e => setNewItemName(e.target.value)}
-                                placeholder="mis. Tepung Terigu"
-                                className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
-                            />
+                            {editingStockId || customName || nameOptions.length === 0 ? (
+                                <>
+                                    <input
+                                        value={newItemName}
+                                        onChange={e => setNewItemName(e.target.value)}
+                                        placeholder="mis. Tepung Terigu"
+                                        autoFocus={customName}
+                                        className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                    />
+                                    {!editingStockId && customName && nameOptions.length > 0 && (
+                                        <button type="button" onClick={() => { setCustomName(false); setNewItemName(''); }} className="text-[11px] font-bold text-primary/60 hover:text-primary underline">
+                                            Pilih dari daftar bahan
+                                        </button>
+                                    )}
+                                </>
+                            ) : (
+                                <select
+                                    value={newItemName}
+                                    onChange={e => pickName(e.target.value)}
+                                    className="w-full h-10 px-3 rounded-xl border border-primary/10 bg-primary/5 text-sm font-bold text-primary focus:outline-none"
+                                >
+                                    <option value="" disabled>Pilih bahan…</option>
+                                    {nameOptions.map(o => (
+                                        <option key={o.item_name} value={o.item_name}>{o.item_name}</option>
+                                    ))}
+                                    <option value={NEW_NAME}>+ Bahan lain (belum ada di daftar)</option>
+                                </select>
+                            )}
                         </div>
                         <div className="flex gap-3">
                             <div className="flex-1 space-y-1.5">
