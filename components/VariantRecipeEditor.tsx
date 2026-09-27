@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LuChevronDown, LuCopy, LuPlus, LuTrash2 } from 'react-icons/lu';
+import { LuChevronDown, LuPlus, LuTrash2 } from 'react-icons/lu';
 import type { Store, Variant } from '@/types/menu';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 import { formatRupiah } from '@/utils/format';
-import { ConfirmBar, buttonPrimary, buttonSecondary, inputClass } from './config/ui';
+import { buttonPrimary, buttonSecondary, inputClass } from './config/ui';
 import { shortStoreNames } from './StoreSwitcher';
 
 export interface StockItem {
@@ -71,8 +71,6 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
             .catch(() => undefined);
         return () => { cancelled = true; };
     }, [storeId]);
-    const [copyTarget, setCopyTarget] = useState<Store | null>(null);
-    const [copying, setCopying] = useState(false);
     const otherStores = stores.filter(s => s.id !== storeId);
     const shortNames = shortStoreNames(stores);
 
@@ -97,23 +95,31 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
         setRows(prev => prev.map((r, idx) => (idx === i ? { stock_id: stockId, qty_gram: r.qty_gram.trim() === '' && top ? String(top.qty_gram) : r.qty_gram } : r)));
     };
 
-    const copyToStore = async (target: Store) => {
-        setCopying(true);
-        try {
-            const json = await fetchJson(`${API_URL}/api/variant-recipe/copy`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ from_store_id: storeId, to_store_id: target.id, variant_ids: [variant.id], make_available: true }),
-            });
-            const created: string[] = json.data.created_stock ?? [];
-            onNotify('✅ Disalin', `Resep ${variant.variant_name} disalin ke ${target.name} dan langsung dijual${created.length ? `. Bahan baru (stok 0): ${created.join(', ')}` : ''}`, 'success');
-            setCopyTarget(null);
-            onSaved?.();
-        } catch (e) {
-            onNotify('❌ Gagal', e instanceof Error ? e.message : 'Gagal menyalin resep', 'error');
-        } finally {
-            setCopying(false);
+    // "Simpan juga ke": other stores' recipe of this flavor, to save the same recipe there too.
+    // Pre-ticked when that store has no recipe yet or still has the same one (kept in sync).
+    const [otherRecipes, setOtherRecipes] = useState<Record<number, { item_name: string; qty_gram: number }[]>>({});
+    const [alsoTo, setAlsoTo] = useState<number[]>([]);
+    const recipeKey = (lines: { item_name: string; qty_gram: number }[]) =>
+        lines.map(l => `${l.item_name.trim().toLowerCase()}:${Number(l.qty_gram)}`).sort().join('|');
+
+    const loadOtherRecipes = async (ownKey: string) => {
+        const entries = await Promise.all(otherStores.map(async st => {
+            try {
+                const json = await fetchJson(`${API_URL}/api/variant-recipe?store_id=${st.id}&variant_id=${variant.id}`);
+                return [st.id, json.data as { item_name: string; qty_gram: number }[]] as const;
+            } catch {
+                return [st.id, null] as const;
+            }
+        }));
+        const next: Record<number, { item_name: string; qty_gram: number }[]> = {};
+        const tick: number[] = [];
+        for (const [id, lines] of entries) {
+            if (!lines) continue;
+            next[id] = lines;
+            if (lines.length === 0 || recipeKey(lines) === ownKey) tick.push(id);
         }
+        setOtherRecipes(next);
+        setAlsoTo(tick);
     };
 
     useEffect(() => {
@@ -123,6 +129,7 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
             .then(json => {
                 if (cancelled || json.status !== 'ok') return;
                 setRows(json.data.map((r: { stock_id: number; qty_gram: number }) => ({ stock_id: r.stock_id, qty_gram: String(r.qty_gram) })));
+                loadOtherRecipes(recipeKey(json.data));
             })
             .catch(() => onNotify('❌ Error', 'Gagal memuat resep', 'error'))
             .finally(() => { if (!cancelled) setLoading(false); });
@@ -155,7 +162,31 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
             });
             if (json.status === 'ok') {
                 setRows(json.data.map((r: { stock_id: number; qty_gram: number }) => ({ stock_id: r.stock_id, qty_gram: String(r.qty_gram) })));
-                onNotify('✅ Tersimpan', `Resep ${variant.variant_name} disimpan`, 'success');
+                // Same recipe to the ticked stores (ingredients matched by name; missing ones created with stock 0).
+                const targets = items.length > 0 ? otherStores.filter(st => alsoTo.includes(st.id)) : [];
+                const created = new Set<string>();
+                const failed: string[] = [];
+                for (const target of targets) {
+                    try {
+                        const copy = await fetchJson(`${API_URL}/api/variant-recipe/copy`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ from_store_id: storeId, to_store_id: target.id, variant_ids: [variant.id], make_available: true }),
+                        });
+                        for (const name of copy.data.created_stock ?? []) created.add(name);
+                    } catch {
+                        failed.push(target.name);
+                    }
+                }
+                const done = targets.filter(t => !failed.includes(t.name)).map(t => shortNames[t.id] ?? t.name);
+                onNotify(
+                    failed.length ? '⚠️ Sebagian tersimpan' : '✅ Tersimpan',
+                    `Resep ${variant.variant_name} disimpan${done.length ? ` juga di ${done.join(', ')} (langsung dijual)` : ''}`
+                        + `${created.size ? `. Bahan baru (stok 0): ${[...created].join(', ')}` : ''}`
+                        + `${failed.length ? `. Gagal disalin ke ${failed.join(', ')}` : ''}`,
+                    failed.length ? 'error' : 'success',
+                );
+                loadOtherRecipes(recipeKey(json.data));
                 setHppVersion(v => v + 1);
                 onSaved?.();
             }
@@ -271,27 +302,28 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                 </div>
             </div>
 
-            {otherStores.length > 0 && rows.some(r => r.stock_id !== '') && (
+            {otherStores.length > 0 && (
                 <div className="pt-3 border-t border-primary/10 space-y-2">
-                    {copyTarget ? (
-                        <ConfirmBar
-                            message={`Resep ${variant.variant_name} disalin ke ${copyTarget.name} (resep lama di sana diganti) dan rasa ini langsung dijual di ${copyTarget.name}. Bahan yang belum ada dibuat dengan stok 0.`}
-                            confirmLabel="Salin"
-                            busy={copying}
-                            onConfirm={() => copyToStore(copyTarget)}
-                            onCancel={() => setCopyTarget(null)}
-                        />
-                    ) : (
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-semibold text-primary/60">Resep sama di store lain?</span>
-                            {otherStores.map(s => (
-                                <button key={s.id} type="button" className={`${buttonSecondary} h-9 sm:h-9`} onClick={() => setCopyTarget(s)} title={`Salin resep tersimpan ke ${s.name}`}>
-                                    <LuCopy /> Salin ke {shortNames[s.id]}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    <p className="text-[11px] text-primary/50">Yang disalin adalah resep yang sudah disimpan.</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-primary/60">Simpan juga ke</p>
+                    <div className="flex flex-wrap gap-2">
+                        {otherStores.map(st => {
+                            const theirs = otherRecipes[st.id];
+                            const ownKey = recipeKey(rows.filter(r => r.stock_id !== '' && r.qty_gram.trim() !== '').map(r => ({
+                                item_name: gramStocks.find(g => g.id === r.stock_id)?.item_name ?? '', qty_gram: Number(r.qty_gram),
+                            })));
+                            const status = !theirs ? '' : theirs.length === 0 ? 'belum ada resep' : recipeKey(theirs) === ownKey ? 'sama' : 'berbeda, akan diganti';
+                            const checked = alsoTo.includes(st.id);
+                            return (
+                                <label key={st.id} className={`flex items-center gap-2 h-11 px-3 rounded-xl border cursor-pointer ${checked ? 'border-primary/40 bg-primary/5' : 'border-primary/10'}`}>
+                                    <input type="checkbox" className="w-4 h-4 accent-primary" checked={checked}
+                                        onChange={e => setAlsoTo(ids => e.target.checked ? [...ids, st.id] : ids.filter(id => id !== st.id))} />
+                                    <span className="text-sm font-semibold text-primary">{shortNames[st.id] ?? st.name}</span>
+                                    {status && <span className={`text-[11px] font-bold ${status.startsWith('berbeda') ? 'text-amber-700' : 'text-primary/50'}`}>{status}</span>}
+                                </label>
+                            );
+                        })}
+                    </div>
+                    <p className="text-[11px] text-primary/50">Saat Simpan resep, resep yang sama ikut disimpan di store yang dicentang dan rasa ini langsung dijual di sana. Bahan yang belum ada dibuat dengan stok 0.</p>
                 </div>
             )}
         </div>

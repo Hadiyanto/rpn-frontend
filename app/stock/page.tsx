@@ -43,8 +43,7 @@ export default function StockPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedStock, setSelectedStock] = useState<any>(null);
     const [qtyChange, setQtyChange] = useState('');
-    const [isIncrement, setIsIncrement] = useState(false); // Default: OUT
-    const [notes, setNotes] = useState('');
+    const [isIncrement, setIsIncrement] = useState(true); // Default: stock-in
     const [totalPrice, setTotalPrice] = useState('');
 
     const { toast, showToast, hideToast } = useToast();
@@ -225,7 +224,7 @@ export default function StockPage() {
             selectedStock.id,
             inputQty,
             type,
-            notes || (isIncrement ? 'Stok tambahan' : 'Penyesuaian stok fisik'),
+            isIncrement ? 'Stok masuk' : 'Penyesuaian stok fisik',
             !isIncrement, // is_target = true jika mode Sisa Stok (unchecked)
             // Purchase price only applies to stock-in; it sets the HPP price per unit.
             isIncrement && totalPrice.trim() ? parseFloat(totalPrice) : null
@@ -250,7 +249,6 @@ export default function StockPage() {
                 showToast('✅ Berhasil', 'Stok berhasil diperbarui', 'success');
                 setIsModalOpen(false);
                 setQtyChange('');
-                setNotes('');
                 setTotalPrice('');
                 fetchStocks();
             } else {
@@ -265,8 +263,7 @@ export default function StockPage() {
     const openAdjustModal = (stock: any) => {
         setSelectedStock(stock);
         setQtyChange('');
-        setIsIncrement(false); // Reset to default OUT
-        setNotes('');
+        setIsIncrement(true); // Default: stock-in; untick for a physical count
         setTotalPrice('');
         setIsModalOpen(true);
     };
@@ -532,7 +529,7 @@ export default function StockPage() {
                                 <div className="flex items-center justify-between p-3 bg-brand-yellow/5 rounded-xl border border-brand-yellow/20 cursor-pointer" onClick={() => setIsIncrement(!isIncrement)}>
                                     <div>
                                         <p className="text-xs font-extrabold text-primary uppercase">Stok Masuk (IN)</p>
-                                        <p className="text-[10px] font-bold text-primary/50">Centang jika ini adalah stok tambahan</p>
+                                        <p className="text-[10px] font-bold text-primary/50">Hilangkan centang untuk hitung fisik (isi sisa stok)</p>
                                     </div>
                                     <input
                                         type="checkbox"
@@ -600,17 +597,6 @@ export default function StockPage() {
                                     })()}
                                 </div>
                             )}
-
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-black uppercase text-primary/60 ml-1">Catatan (Opsional)</label>
-                                <input
-                                    type="text"
-                                    value={notes}
-                                    onChange={e => setNotes(e.target.value)}
-                                    placeholder="Contoh: Stok masuk harian"
-                                    className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/10 focus:border-primary outline-none transition-all placeholder:text-gray-300"
-                                />
-                            </div>
 
                             <button
                                 onClick={handleAdjustStock}
