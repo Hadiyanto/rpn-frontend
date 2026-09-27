@@ -25,6 +25,8 @@ interface RecipeRow {
 
 interface HppResult {
     hpp: number;
+    hpp_ingredients?: number;
+    hpp_packaging?: number;
     breakdown: { stock_id: number; item_name: string; qty_gram: number; price_per_unit: number | null; subtotal: number }[];
     missing_price: number[];
 }
@@ -203,8 +205,19 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
         <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-brand-yellow/20 px-4 py-3">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-primary/60">HPP bahan baku</span>
-                <span className="text-sm font-extrabold text-primary tabular-nums">Box Besar {hpp.FULL ? formatRupiah(Math.round(hpp.FULL.hpp)) : '…'}</span>
-                <span className="text-sm font-extrabold text-primary tabular-nums">Box Kecil {hpp.HALF ? formatRupiah(Math.round(hpp.HALF.hpp)) : '…'}</span>
+                {(['FULL', 'HALF'] as const).map(box => {
+                    const h = hpp[box];
+                    return (
+                        <span key={box} className="text-sm font-extrabold text-primary tabular-nums">
+                            {box === 'FULL' ? 'Box Besar' : 'Box Kecil'} {h ? formatRupiah(Math.round(h.hpp)) : '…'}
+                            {h && (h.hpp_packaging ?? 0) > 0 && (
+                                <span className="ml-1 text-[11px] font-semibold text-primary/60">
+                                    (bahan {formatRupiah(Math.round(h.hpp_ingredients ?? 0))} + kemasan {formatRupiah(Math.round(h.hpp_packaging ?? 0))})
+                                </span>
+                            )}
+                        </span>
+                    );
+                })}
                 {missingNames.length > 0 && (
                     <span className="w-full text-xs font-semibold text-red-600">
                         Harga modal belum diisi: {missingNames.join(', ')} (dihitung Rp 0). Isi di halaman Stok → ikon pensil bahan → Harga modal.
