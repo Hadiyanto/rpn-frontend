@@ -13,6 +13,11 @@ import Toast from '@/components/Toast';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 
+// Weight/volume units are bought in bulk ("Rp 700.000 for 5000 g"); anything else (pcs, …) is
+// counted and priced per unit directly.
+const MEASURED_UNITS = ['gram', 'g', 'gr', 'kg', 'ml', 'liter', 'l'];
+const isCountUnit = (unit: string | null | undefined) => !!unit && !MEASURED_UNITS.includes(unit.trim().toLowerCase());
+
 export default function StockPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
     const userRoleData = useUserRole('stock');
@@ -98,10 +103,13 @@ export default function StockPage() {
         setCustomName(false);
     };
 
+    // Counted items (pcs) are priced per unit directly; weights/volumes as "Rp total for N units".
+    const perUnitPricing = isCountUnit(newItemUnit);
     // Amount defaults to the initial stock when creating ("bought 5000 g for Rp 700.000").
     const effectivePriceAmount = priceAmount.trim() || (!editingStockId ? newItemQty.trim() : '');
     const computedPricePerUnit = (() => {
         const total = parseFloat(priceTotal);
+        if (perUnitPricing) return total >= 0 ? total : null;
         const amount = parseFloat(effectivePriceAmount);
         return total >= 0 && amount > 0 ? total / amount : null;
     })();
@@ -226,8 +234,11 @@ export default function StockPage() {
             type,
             isIncrement ? 'Stok masuk' : 'Penyesuaian stok fisik',
             !isIncrement, // is_target = true jika mode Sisa Stok (unchecked)
-            // Purchase price only applies to stock-in; it sets the HPP price per unit.
-            isIncrement && totalPrice.trim() ? parseFloat(totalPrice) : null
+            // Purchase price only applies to stock-in (averaged into the HPP price per unit).
+            // Counted items are entered per unit, so send price × qty as the total.
+            isIncrement && totalPrice.trim()
+                ? (isCountUnit(selectedStock.unit) ? parseFloat(totalPrice) * inputQty : parseFloat(totalPrice))
+                : null
         );
     };
 
@@ -386,9 +397,12 @@ export default function StockPage() {
                                     min="0"
                                     value={priceTotal}
                                     onChange={e => setPriceTotal(e.target.value)}
-                                    placeholder="700000"
+                                    placeholder={perUnitPricing ? '1500' : '700000'}
                                     className="flex-1 min-w-0 h-11 px-3 rounded-xl border border-primary/10 bg-white text-base sm:text-sm font-bold text-primary focus:outline-none"
                                 />
+                                {perUnitPricing ? (
+                                    <span className="text-sm font-bold text-primary/60">/ {newItemUnit}</span>
+                                ) : (<>
                                 <span className="text-sm font-bold text-primary/60">untuk</span>
                                 <input
                                     id="stock-price-amount"
@@ -401,12 +415,15 @@ export default function StockPage() {
                                     className="w-24 h-11 px-3 rounded-xl border border-primary/10 bg-white text-base sm:text-sm font-bold text-primary focus:outline-none"
                                 />
                                 <span className="text-sm font-bold text-primary/60 w-10 truncate">{newItemUnit}</span>
+                                </>)}
                             </div>
                             {editingStockId && (
                                 <p className="text-[11px] text-primary/50">Mengisi di sini langsung <b>mengganti</b> harga modal (untuk koreksi). Pembelian baru sebaiknya lewat Penyesuaian → Stok Masuk, supaya harga dirata-rata dengan sisa stok.</p>
                             )}
                             <p className="text-[11px] font-semibold text-primary/60">
-                                {computedPricePerUnit !== null
+                                {perUnitPricing
+                                    ? `Harga beli per ${newItemUnit}, dipakai untuk menghitung HPP.`
+                                    : computedPricePerUnit !== null
                                     ? <>≈ <b className="text-primary">{formatPerUnit(computedPricePerUnit)}</b> / {newItemUnit}. Dipakai untuk menghitung HPP.</>
                                     : !editingStockId && newItemQty
                                         ? `Kosongkan "untuk" kalau harganya untuk jumlah stok yang diinput (${newItemQty} ${newItemUnit}).`
@@ -568,26 +585,30 @@ export default function StockPage() {
 
                             {isIncrement && (
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase text-primary/60 ml-1">Total Harga Beli (Opsional)</label>
+                                    <label className="text-[10px] font-black uppercase text-primary/60 ml-1">
+                                        {isCountUnit(selectedStock.unit) ? `Harga Beli per ${selectedStock.unit} (Opsional)` : 'Total Harga Beli (Opsional)'}
+                                    </label>
                                     <input
                                         type="number"
                                         inputMode="decimal"
                                         value={totalPrice}
                                         onChange={e => setTotalPrice(e.target.value)}
-                                        placeholder="mis. 700000"
+                                        placeholder={isCountUnit(selectedStock.unit) ? 'mis. 1500' : 'mis. 700000'}
                                         className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm font-bold text-primary focus:ring-2 focus:ring-primary/10 focus:border-primary outline-none transition-all placeholder:text-gray-300 placeholder:font-medium"
                                     />
                                     {totalPrice && parseFloat(qtyChange) > 0 && !isNaN(parseFloat(totalPrice)) && (() => {
                                         // Same rule as the backend: average what's on hand with this purchase.
                                         const inQty = parseFloat(qtyChange);
-                                        const inCost = parseFloat(totalPrice) / inQty;
+                                        const inCost = isCountUnit(selectedStock.unit) ? parseFloat(totalPrice) : parseFloat(totalPrice) / inQty;
                                         const onHand = Number(selectedStock.qty);
                                         const current = selectedStock.price_per_unit == null ? null : Number(selectedStock.price_per_unit);
                                         const next = current === null || !(onHand > 0) ? inCost : (onHand * current + inQty * inCost) / (onHand + inQty);
                                         const rp = (n: number) => `Rp ${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
                                         return (
                                             <p className="text-xs font-medium text-gray-500 ml-1 space-y-0.5">
-                                                <span className="block">Harga beli ini ≈ <b className="text-primary">{rp(inCost)}</b> / {selectedStock.unit}</span>
+                                                {isCountUnit(selectedStock.unit)
+                                                    ? <span className="block">Total beli ≈ <b className="text-primary">{rp(inCost * inQty)}</b> untuk {inQty} {selectedStock.unit}</span>
+                                                    : <span className="block">Harga beli ini ≈ <b className="text-primary">{rp(inCost)}</b> / {selectedStock.unit}</span>}
                                                 <span className="block">
                                                     Harga modal baru (rata-rata): <b className="text-primary">{rp(next)}</b> / {selectedStock.unit}
                                                     {current !== null && onHand > 0 && <> — dari sisa {onHand} {selectedStock.unit} @ {rp(current)}</>}
