@@ -180,7 +180,7 @@ export default function ConfigPage() {
                         {tab === 'varian' && <VariantManager variants={variants} stores={stores} stocks={stocks} activeStoreId={activeStore.id} onChanged={refresh} notify={notify} focusVariantId={focusVariantId} onFocusHandled={() => setFocusVariantId(null)} />}
                         {tab === 'tersedia' && <AvailabilityManager variants={variants} stores={stores} onChanged={refresh} onOpenRecipe={openRecipe} notify={notify} />}
                         {tab === 'kuota' && <QuotaManager key={activeStore.id} store={activeStore} quotas={quotas} hourlyQuotas={hourlyQuotas} onChanged={refresh} notify={notify} />}
-                        {tab === 'store' && <StoreSettings store={activeStore} onSaved={() => { loadStores(); refresh(); }} notify={notify} />}
+                        {tab === 'store' && <StoreSettings store={activeStore} stores={stores} onSaved={() => { loadStores(); refresh(); }} notify={notify} />}
                     </>
                 )}
             </main>

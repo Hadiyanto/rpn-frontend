@@ -10,7 +10,7 @@ import { Card, Field, SectionHeader, StickyActions, buttonPrimary, inputClass } 
 
 type Notify = (title: string, message: string, type: 'success' | 'error') => void;
 
-type Form = Record<'name' | 'address' | 'phone' | 'latitude' | 'longitude' | 'area_id' | 'open_time' | 'bank_name' | 'bank_account_number' | 'bank_account_name' | 'qris_image_url', string>;
+type Form = Record<'name' | 'address' | 'phone' | 'latitude' | 'longitude' | 'area_id' | 'open_time' | 'bank_name' | 'bank_account_number' | 'bank_account_name' | 'qris_image_url' | 'labor_target_boxes' | 'labor_reference_store_id', string>;
 
 const toForm = (s: Store): Form => ({
     name: s.name ?? '',
@@ -24,10 +24,12 @@ const toForm = (s: Store): Form => ({
     bank_account_number: s.bank_account_number ?? '',
     bank_account_name: s.bank_account_name ?? '',
     qris_image_url: s.qris_image_url ?? '',
+    labor_target_boxes: String(s.labor_target_boxes ?? 30),
+    labor_reference_store_id: s.labor_reference_store_id ? String(s.labor_reference_store_id) : '',
 });
 
 /** Everything customers see about the selected store: address, opening hour, payment details, delivery origin. */
-export default function StoreSettings({ store, onSaved, notify }: { store: Store; onSaved: () => void; notify: Notify }) {
+export default function StoreSettings({ store, stores = [], onSaved, notify }: { store: Store; stores?: Store[]; onSaved: () => void; notify: Notify }) {
     const [form, setForm] = useState<Form>(toForm(store));
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -70,6 +72,8 @@ export default function StoreSettings({ store, onSaved, notify }: { store: Store
                     bank_account_number: orNull(form.bank_account_number),
                     bank_account_name: orNull(form.bank_account_name),
                     qris_image_url: orNull(form.qris_image_url),
+                    labor_target_boxes: Number(form.labor_target_boxes) || 30,
+                    labor_reference_store_id: form.labor_reference_store_id ? Number(form.labor_reference_store_id) : null,
                 }),
             });
             notify('✅ Tersimpan', `Data ${form.name} disimpan`, 'success');
@@ -123,6 +127,28 @@ export default function StoreSettings({ store, onSaved, notify }: { store: Store
                             </div>
                         </div>
                     </div>
+                </Card>
+                <Card className="space-y-4">
+                    <h3 className="text-sm font-extrabold text-primary">Tenaga kerja di HPP</h3>
+                    <p className="text-xs text-primary/60">
+                        HPP per box memperkirakan gaji ÷ box per hari. Gaji harian yang sebenarnya tetap dihitung di halaman Gaji.
+                    </p>
+                    <Field label="Acuan gaji untuk HPP">
+                        <select className={inputClass} value={form.labor_reference_store_id} onChange={set('labor_reference_store_id')}>
+                            <option value="">Gaji store ini sendiri</option>
+                            {stores.filter(s => s.id !== store.id && !s.labor_reference_store_id).map(s => (
+                                <option key={s.id} value={s.id}>Gaji {s.name}</option>
+                            ))}
+                        </select>
+                    </Field>
+                    {!form.labor_reference_store_id && (
+                        <Field label="Target box per hari" hint="Contoh: gaji 30 box Rp 240.000 → Rp 8.000 per Box Besar, Rp 4.000 per Box Kecil">
+                            <input className={inputClass} type="number" inputMode="numeric" min="1" value={form.labor_target_boxes} onChange={set('labor_target_boxes')} />
+                        </Field>
+                    )}
+                    {form.labor_reference_store_id && (
+                        <p className="text-xs text-primary/60">Target box per hari mengikuti store acuan.</p>
+                    )}
                 </Card>
             </div>
             <StickyActions>

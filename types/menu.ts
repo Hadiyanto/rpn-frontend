@@ -45,4 +45,8 @@ export interface Store {
     bank_account_number: string | null;
     bank_account_name: string | null;
     qris_image_url: string | null;
+    /** Boxes per day assumed for the HPP labor cost. */
+    labor_target_boxes?: number;
+    /** Store whose salary is used for this store's HPP labor cost (null = own). */
+    labor_reference_store_id?: number | null;
 }

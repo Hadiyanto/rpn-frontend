@@ -18,6 +18,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { formatRupiah } from '@/utils/format';
 import PageHeader from '@/components/PageHeader';
+import StoreSwitcher from '@/components/StoreSwitcher';
 
 interface SummaryData {
     totalRevenue: number;
@@ -30,6 +31,10 @@ interface SummaryData {
     returnToCapital: number;
     totalBoxes: number;
     remainingDebt: number;
+    storeId: number | null;
+    generalCost: number;
+    salaryCost: number;
+    stockCostSold: number;
 }
 
 export default function SummaryPage() {
@@ -44,6 +49,12 @@ export default function SummaryPage() {
 
     const [startDate, setStartDate] = useState<Date>(firstDay);
     const [endDate, setEndDate] = useState<Date>(today);
+    // null = whole business; a store = its own revenue and expenses (general expenses shown apart).
+    const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+    const [storeId, setStoreId] = useState<number | null>(null);
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`).then(json => setStores(json.data ?? [])).catch(console.error);
+    }, []);
 
     const fetchSummary = async () => {
         if (!startDate || !endDate) return;
@@ -54,7 +65,7 @@ export default function SummaryPage() {
         const endStr = new Date(endDate.getTime() - endDate.getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
         try {
-            const json = await fetchJson(`${API_URL}/api/finance/summary?start=${startStr}&end=${endStr}`);
+            const json = await fetchJson(`${API_URL}/api/finance/summary?start=${startStr}&end=${endStr}${storeId ? `&store_id=${storeId}` : ''}`);
             if (json.status === 'ok') {
                 setSummary(json.data);
             } else {
@@ -71,7 +82,7 @@ export default function SummaryPage() {
     useEffect(() => {
         fetchSummary();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [startDate, endDate]);
+    }, [startDate, endDate, storeId]);
 
     return (
         <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col items-center">
@@ -81,6 +92,7 @@ export default function SummaryPage() {
                 {/* Header */}
                 <PageHeader title="Business Summary" subtitle="Ringkasan keuangan per periode" icon={<LuActivity />} onMenu={() => setShowSidebar(true)}>
 
+                    <StoreSwitcher stores={stores} value={storeId} onChange={setStoreId} allowAll />
                     {/* Date Pickers */}
                     <div className="flex items-center gap-2">
                         <div className="flex-1 relative">
@@ -165,10 +177,31 @@ export default function SummaryPage() {
                                             <LuTrendingDown className="text-red-400" /> Cost (HPP)
                                         </p>
                                         <p className="text-lg font-black text-red-500 truncate">{formatRupiah(summary.totalCost)}</p>
-                                        <p className="text-[10px] font-bold text-primary/40 mt-1">Total Pengeluaran</p>
+                                        <p className="text-[10px] font-bold text-primary/40 mt-1">
+                                            Total Pengeluaran{summary.storeId ? ' store ini' : ''}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Cost details: salary is booked as an expense automatically; stock cost is info only */}
+                            <section className="bg-white rounded-3xl p-5 shadow-sm border border-primary/5 space-y-2 text-xs">
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-primary/60">Gaji (di pengeluaran)</span>
+                                    <span className="font-black text-primary tabular-nums">{formatRupiah(summary.salaryCost)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-primary/60">
+                                        Biaya umum (tanpa store){summary.storeId ? ', tidak dihitung di sini' : ''}
+                                    </span>
+                                    <span className="font-black text-primary tabular-nums">{formatRupiah(summary.generalCost)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-primary/60">HPP bahan & kemasan terjual (info)</span>
+                                    <span className="font-black text-primary tabular-nums">{formatRupiah(summary.stockCostSold)}</span>
+                                </div>
+                                <p className="text-[10px] text-primary/40">HPP bahan tidak ditambahkan ke biaya, karena belanja bahan sudah dicatat di pengeluaran.</p>
+                            </section>
 
                             {/* Section: Real Profitability */}
                             <section className="bg-white/60 rounded-3xl p-1 border border-primary/5 shadow-sm">

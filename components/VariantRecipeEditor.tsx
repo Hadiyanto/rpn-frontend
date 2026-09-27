@@ -27,6 +27,8 @@ interface HppResult {
     hpp: number;
     hpp_ingredients?: number;
     hpp_packaging?: number;
+    hpp_labor?: number;
+    labor?: { per_full_box: number; target_boxes: number; reference_store_id: number; reference_store_name: string | null } | null;
     breakdown: { stock_id: number; item_name: string; qty_gram: number; price_per_unit: number | null; subtotal: number }[];
     missing_price: number[];
 }
@@ -210,14 +212,23 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                     return (
                         <span key={box} className="text-sm font-extrabold text-primary tabular-nums">
                             {box === 'FULL' ? 'Box Besar' : 'Box Kecil'} {h ? formatRupiah(Math.round(h.hpp)) : '…'}
-                            {h && (h.hpp_packaging ?? 0) > 0 && (
+                            {h && ((h.hpp_packaging ?? 0) > 0 || (h.hpp_labor ?? 0) > 0) && (
                                 <span className="ml-1 text-[11px] font-semibold text-primary/60">
-                                    (bahan {formatRupiah(Math.round(h.hpp_ingredients ?? 0))} + kemasan {formatRupiah(Math.round(h.hpp_packaging ?? 0))})
+                                    (bahan {formatRupiah(Math.round(h.hpp_ingredients ?? 0))}
+                                    {(h.hpp_packaging ?? 0) > 0 && <> + kemasan {formatRupiah(Math.round(h.hpp_packaging ?? 0))}</>}
+                                    {(h.hpp_labor ?? 0) > 0 && <> + tenaga kerja {formatRupiah(Math.round(h.hpp_labor ?? 0))}</>})
                                 </span>
                             )}
                         </span>
                     );
                 })}
+                {hpp.FULL?.labor && (hpp.FULL.hpp_labor ?? 0) > 0 && (
+                    <span className="w-full text-[11px] text-primary/50">
+                        Tenaga kerja: perkiraan gaji {hpp.FULL.labor.target_boxes} box/hari ÷ {hpp.FULL.labor.target_boxes}
+                        {hpp.FULL.labor.reference_store_id !== storeId && hpp.FULL.labor.reference_store_name ? ` · acuan ${hpp.FULL.labor.reference_store_name}` : ''}.
+                        Atur di tab Store.
+                    </span>
+                )}
                 {missingNames.length > 0 && (
                     <span className="w-full text-xs font-semibold text-red-600">
                         Harga modal belum diisi: {missingNames.join(', ')} (dihitung Rp 0). Isi di halaman Stok → ikon pensil bahan → Harga modal.

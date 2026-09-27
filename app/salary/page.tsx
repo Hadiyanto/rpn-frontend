@@ -13,6 +13,7 @@ import Toast from '@/components/Toast';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 import PageHeader from '@/components/PageHeader';
+import StoreSwitcher from '@/components/StoreSwitcher';
 
 export default function SalaryPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -30,10 +31,21 @@ export default function SalaryPage() {
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const { toast, showToast, hideToast } = useToast();
 
+    // Salary is per store: each store has its own tiers, history and expense entries.
+    const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+    const [storeId, setStoreId] = useState<number | null>(null);
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => { setStores(json.data); setStoreId(json.data[0]?.id ?? null); })
+            .catch(() => showToast('❌ Error', 'Gagal memuat daftar store', 'error'));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const fetchSalaries = async () => {
+        if (!storeId) return;
         setLoading(true);
         try {
-            const json = await fetchJson(`${API_URL}/api/daily-salary`);
+            const json = await fetchJson(`${API_URL}/api/daily-salary?store_id=${storeId}`);
             if (json.status === 'ok') {
                 setSalaries(json.data);
             }
@@ -47,7 +59,8 @@ export default function SalaryPage() {
 
     useEffect(() => {
         fetchSalaries();
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [storeId]);
 
     const handlePreviewSalary = async () => {
         setPreviewing(true);
@@ -64,7 +77,7 @@ export default function SalaryPage() {
             const json = await fetchJson(`${API_URL}/api/daily-salary/preview`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: dateStr })
+                body: JSON.stringify({ date: dateStr, store_id: storeId })
             });
 
             if (json.status === 'ok') {
@@ -89,11 +102,13 @@ export default function SalaryPage() {
             const json = await fetchJson(`${API_URL}/api/daily-salary/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: dateStr })
+                body: JSON.stringify({ date: dateStr, store_id: previewData.store_id })
             });
 
             if (json.status === 'ok') {
-                showToast('✅ Berhasil', `Gaji untuk tanggal ${dateStr} berhasil disimpan ke DB.`, 'success');
+                showToast('✅ Berhasil', Number(previewData.totalSalary) > 0
+                    ? `Gaji ${dateStr} disimpan dan dicatat di Pengeluaran (kategori Gaji).`
+                    : `Gaji ${dateStr} disimpan (Rp 0, tidak dicatat di Pengeluaran).`, 'success');
                 setIsPreviewModalOpen(false);
                 setPreviewData(null);
                 fetchSalaries();
@@ -124,7 +139,9 @@ export default function SalaryPage() {
             />
 
             {/* Header */}
-            <PageHeader title="Gaji Karyawan" subtitle="Generate dan riwayat gaji harian" icon={<LuBanknote />} onMenu={() => setSidebarOpen(true)} />
+            <PageHeader title="Gaji Karyawan" subtitle="Generate dan riwayat gaji harian per store" icon={<LuBanknote />} onMenu={() => setSidebarOpen(true)}>
+                <StoreSwitcher stores={stores} value={storeId} onChange={setStoreId} />
+            </PageHeader>
 
             {/* Content */}
             <div className="p-5 pb-24 space-y-6">
@@ -166,7 +183,7 @@ export default function SalaryPage() {
                             {previewing ? 'Menghitung Detail...' : 'Hitung & Lihat Detail'}
                         </button>
                         <p className="text-[10px] text-center font-bold text-primary/40 leading-tight">
-                            Gaji dihitung dari jumlah box terjual pada hari tersebut. Harap pastikan hari tersebut sudah ditutup transaksinya.
+                            Gaji dihitung dari box terjual (PAID/DONE, Box Kecil = ½) di store ini pada hari tersebut, lalu otomatis dicatat di Pengeluaran. Generate ulang memperbarui catatan yang sama.
                         </p>
                     </div>
                 </div>
@@ -196,6 +213,9 @@ export default function SalaryPage() {
                                             <span className="text-xs font-black text-primary">{s.total_boxes}</span>
                                             <span className="text-[9px] font-bold text-primary/60 uppercase">Box Terjual</span>
                                         </div>
+                                        {s.total_boxes > 0 && (
+                                            <span className="ml-2 text-[11px] font-bold text-primary/50">Rp {Math.round(Number(s.total_salary) / s.total_boxes).toLocaleString('id-ID')}/box</span>
+                                        )}
                                     </div>
                                     <div className="text-right">
                                         <p className="text-[10px] font-bold uppercase text-primary/50 mb-0.5">Total Gaji</p>
@@ -233,6 +253,19 @@ export default function SalaryPage() {
                                     <p className="text-2xl font-black text-primary">{previewData.totalBoxesRounded}</p>
                                 </div>
                             </div>
+
+                            {(previewData.breakdown ?? []).length > 0 && (
+                                <div className="rounded-2xl border border-primary/10 divide-y divide-primary/5">
+                                    {previewData.breakdown.map((l: { from: number; to: number; boxes: number; rate: number; fixed: boolean; amount: number }, i: number) => (
+                                        <div key={i} className="flex items-center justify-between px-4 py-2 text-xs">
+                                            <span className="font-semibold text-primary/70">
+                                                {l.fixed ? `Gaji pokok (box 1–${l.to})` : `Box ${l.from}–${l.to}: ${l.boxes} × Rp ${l.rate.toLocaleString('id-ID')}`}
+                                            </span>
+                                            <span className="font-bold text-primary tabular-nums">Rp {l.amount.toLocaleString('id-ID')}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
 
                             <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10 text-center">
                                 <p className="text-[10px] uppercase font-black tracking-wider text-primary/50 mb-1">Total Gaji Kalkulatif</p>

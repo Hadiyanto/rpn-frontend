@@ -57,6 +57,10 @@ interface Pengeluaran {
     date: string;
     receipt_image_url: string | null;
     created_at: string;
+    /** null = general expense (not tied to a store) */
+    store_id: number | null;
+    /** Set when booked automatically by the salary page. */
+    daily_salary_id: number | null;
 }
 
 /* ─── Helpers ───────────────────────────────────────────────────────── */
@@ -71,7 +75,8 @@ function formatDate(dateStr: string) {
     return `${day}, ${date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
 }
 
-const EXPENSE_CATEGORIES = ['Bahan Baku', 'Operasional', 'Gaji', 'Packaging', 'Transportasi', 'Lainnya'];
+// "Gaji" is booked automatically when the daily salary is generated (halaman Gaji).
+const EXPENSE_CATEGORIES = ['Bahan Baku', 'Operasional', 'Packaging', 'Transportasi', 'Lainnya'];
 
 /* ─── Component ─────────────────────────────────────────────────────── */
 
@@ -97,9 +102,10 @@ export default function CashflowPage() {
         category: '',
         price: '',
         date: getTodayStr(),
+        store_id: '',
     });
 
-    const resetExpForm = () => setExpForm({ name: '', category: '', price: '', date: getTodayStr() });
+    const resetExpForm = () => setExpForm({ name: '', category: '', price: '', date: getTodayStr(), store_id: storeFilter ? String(storeFilter) : '' });
 
     useEffect(() => {
         let cancelled = false;
@@ -136,6 +142,7 @@ export default function CashflowPage() {
                     category: expForm.category || null,
                     price: Number(expForm.price),
                     date: expForm.date || getTodayStr(),
+                    store_id: expForm.store_id ? Number(expForm.store_id) : null,
                 }),
             });
             if (json.status === 'ok') {
@@ -157,16 +164,18 @@ export default function CashflowPage() {
     /* ─── Data Processing ───────────────────────────────────────────── */
 
     const doneOrders = orders.filter(o => o.status === 'DONE' && (storeFilter === null || o.store_id === storeFilter));
+    // Per store: that store's expenses only (general ones only show under "Semua"), like /summary.
+    const storeExpenses = storeFilter === null ? expenses : expenses.filter(e => e.store_id === storeFilter);
 
     // All unique dates from both sources
     const allDates = Array.from(new Set([
         ...doneOrders.map(o => o.pickup_date),
-        ...expenses.map(e => e.date),
+        ...storeExpenses.map(e => e.date),
     ])).sort();
 
     // Filtered by date
     const filteredOrders = activeDate === 'ALL' ? doneOrders : doneOrders.filter(o => o.pickup_date === activeDate);
-    const filteredExpenses = activeDate === 'ALL' ? expenses : expenses.filter(e => e.date === activeDate);
+    const filteredExpenses = activeDate === 'ALL' ? storeExpenses : storeExpenses.filter(e => e.date === activeDate);
 
     const totalIncome = filteredOrders.reduce((s, o) => s + orderRevenue(o), 0);
     const totalExpense = filteredExpenses.reduce((s, e) => s + Number(e.price), 0);
@@ -200,7 +209,7 @@ export default function CashflowPage() {
         if (!dateMap[o.pickup_date]) dateMap[o.pickup_date] = { income: 0, expense: 0 };
         dateMap[o.pickup_date].income += orderRevenue(o);
     });
-    expenses.forEach(e => {
+    storeExpenses.forEach(e => {
         if (!dateMap[e.date]) dateMap[e.date] = { income: 0, expense: 0 };
         dateMap[e.date].expense += Number(e.price);
     });
@@ -398,6 +407,8 @@ export default function CashflowPage() {
                                                 {formatChipDate(item.date)}
                                                 {item.type === 'income' && item.order.pickup_time ? ` · ${item.order.pickup_time}` : ''}
                                                 {item.type === 'expense' && item.expense.category ? ` · ${item.expense.category}` : ''}
+                                                {item.type === 'expense' && item.expense.daily_salary_id ? ' · otomatis dari Gaji' : ''}
+                                                {item.type === 'expense' && storeFilter === null && item.expense.store_id === null ? ' · Umum' : ''}
                                             </p>
                                         </div>
                                         {/* Amount */}
@@ -456,6 +467,23 @@ export default function CashflowPage() {
                                         value={expForm.name}
                                         onChange={e => setExpForm(f => ({ ...f, name: e.target.value }))}
                                     />
+                                </div>
+
+                                {/* Store: null = general expense */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Store</label>
+                                    <div className="relative">
+                                        <select
+                                            value={expForm.store_id}
+                                            onChange={e => setExpForm(f => ({ ...f, store_id: e.target.value }))}
+                                            className="w-full h-11 px-4 pr-10 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 appearance-none"
+                                        >
+                                            <option value="">Umum (semua store)</option>
+                                            {stores.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
+                                        </select>
+                                        <LuChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
+                                    </div>
+                                    <p className="text-[10px] text-primary/40">Gaji tidak perlu dicatat di sini: otomatis masuk saat generate di halaman Gaji.</p>
                                 </div>
 
                                 {/* Category */}
