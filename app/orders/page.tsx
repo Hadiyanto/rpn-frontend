@@ -1242,7 +1242,7 @@ export default function OrdersPage() {
                                                     const price = boxPrice(variants, item.variant_ids ?? [], form.store_id, item.box_type);
                                                     return (
                                                         <p className="text-[11px] font-bold text-primary/60 mt-2">
-                                                            {price === null ? 'Ada rasa tanpa harga di store ini' : `${item.qty} × Rp ${price.toLocaleString('id-ID')}${(item.variant_ids?.length ?? 0) > 1 ? ' (rasa termahal)' : ''} = Rp ${(price * item.qty).toLocaleString('id-ID')}`}
+                                                            {price === null ? 'Ada rasa tanpa harga di store ini' : `${item.qty} × Rp ${price.toLocaleString('id-ID')} = Rp ${(price * item.qty).toLocaleString('id-ID')}`}
                                                         </p>
                                                     );
                                                 })()}

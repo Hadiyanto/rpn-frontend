@@ -16,8 +16,8 @@ interface FlavorPickerProps {
     /** Tailwind radius class for the option cards. */
     radiusClass?: string;
     /**
-     * With both set, only flavors priced for this box type at this store are offered, each
-     * showing its price (a box costs its most expensive flavor).
+     * With both set, only flavors priced for this box type at this store are offered. Prices
+     * aren't shown per flavor (ambiguous for mixes); the item shows the box price instead.
      */
     storeId?: number | null;
     boxType?: string;
@@ -68,13 +68,7 @@ export default function FlavorPicker({
                             {isChecked && <LuCheck className="text-[10px] stroke-[4]" />}
                         </div>
                         {showImages && v.image_url && <img src={v.image_url} alt={v.variant_name} className="w-8 h-8 rounded-lg object-cover shrink-0" />}
-                        <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">
-                            {v.variant_name}
-                            {priced && (() => {
-                                const price = flavorPrice(v, storeId, boxType!);
-                                return <span className="block text-[10px] font-semibold text-primary/50 mt-0.5">{price === null ? 'Belum ada harga' : `Rp ${price.toLocaleString('id-ID')}`}</span>;
-                            })()}
-                        </span>
+                        <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">{v.variant_name}</span>
                     </label>
                 );
             })}

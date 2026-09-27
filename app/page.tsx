@@ -792,9 +792,6 @@ export default function OrderPage() {
                                                             onChange={sel => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, ...sel } : p) }))}
                                                         />
                                                     </div>
-                                                    {item.name && (item.variant_ids?.length ?? 0) > 1 && (
-                                                        <p className="text-[10px] font-semibold text-primary/50 mt-2">Harga box mengikuti rasa termahal: Rp {priceOfItem(item).toLocaleString('id-ID')}</p>
-                                                    )}
                                                     {!item.name && item.isExpanded && <p className="text-[10px] text-red-500 font-bold mt-3">* Silahkan pilih minimal 1 rasa</p>}
                                                 </div>
                                             </div>
