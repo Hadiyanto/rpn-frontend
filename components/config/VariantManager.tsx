@@ -9,6 +9,7 @@ import { uploadImage } from '@/utils/upload';
 import VariantRecipeEditor, { type StockItem } from '@/components/VariantRecipeEditor';
 import { shortStoreNames } from '@/components/StoreSwitcher';
 import BaseRecipeEditor from './BaseRecipeEditor';
+import { flavorPrice } from '@/utils/pricing';
 import PackagingEditor from './PackagingEditor';
 import { BackButton, Card, ConfirmBar, EmptyState, Field, SectionHeader, StatusPill, StickyActions, buttonDanger, buttonPrimary, buttonSecondary, inputClass } from './ui';
 
@@ -185,7 +186,6 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
                 }
             />
             <BaseRecipeEditor storeId={activeStoreId} stores={stores} stocks={stocks} notify={notify} onChanged={onChanged} />
-            <PackagingEditor storeId={activeStoreId} stores={stores} stocks={stocks} notify={notify} onChanged={onChanged} />
             {copyOpen && (
                 <Card className="mt-3 space-y-4">
                     <div className="flex items-start justify-between gap-3">
@@ -275,13 +275,22 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
                                                     {(v.recipe_store_ids ?? []).length === 0
                                                         ? 'Belum ada resep'
                                                         : `Resep: ${stores.filter(s => (v.recipe_store_ids ?? []).includes(s.id)).map(s => shortNames[s.id]).join(', ')}`}
+                                                    {(() => {
+                                                        const full = flavorPrice(v, activeStoreId, 'FULL');
+                                                        const half = flavorPrice(v, activeStoreId, 'HALF');
+                                                        return full !== null || half !== null
+                                                            ? ` · ${full !== null ? `${(full / 1000).toLocaleString('id-ID')}k` : '–'} / ${half !== null ? `${(half / 1000).toLocaleString('id-ID')}k` : '–'}`
+                                                            : '';
+                                                    })()}
                                                 </span>
                                             </span>
                                             {!v.is_active
                                                 ? <StatusPill state="off">Nonaktif</StatusPill>
                                                 : !(v.recipe_store_ids ?? []).includes(activeStoreId)
                                                     ? <StatusPill state="todo">Belum ada resep di {shortNames[activeStoreId]}</StatusPill>
-                                                    : !inStore && <StatusPill state="partial">Belum dijual</StatusPill>}
+                                                    : !(v.price_store_ids ?? []).includes(activeStoreId)
+                                                        ? <StatusPill state="todo">Belum ada harga</StatusPill>
+                                                        : !inStore && <StatusPill state="partial">Belum dijual</StatusPill>}
                                         </button>
                                     </li>
                                 );
@@ -356,6 +365,11 @@ export default function VariantManager({ variants, stores, stocks, activeStoreId
                         <EmptyState title="Pilih rasa untuk mengedit">Atau tambah rasa baru. Resep diisi per store yang sedang dipilih di atas.</EmptyState>
                     </div>
                 )}
+            </div>
+
+            {/* Packaging sits last: it's set once per store, the flavors above change more often. */}
+            <div className={draft ? 'hidden lg:block' : ''}>
+                <PackagingEditor storeId={activeStoreId} stores={stores} stocks={stocks} notify={notify} onChanged={onChanged} />
             </div>
         </div>
     );

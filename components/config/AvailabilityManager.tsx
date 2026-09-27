@@ -29,7 +29,7 @@ export default function AvailabilityManager({ variants, stores, onChanged, onOpe
         () => [...variants].filter(v => v.is_active !== false).sort((a, b) => a.variant_name.localeCompare(b.variant_name)),
         [variants],
     );
-    const missingCount = stores.map(s => ({ store: s, count: active.filter(v => !(v.recipe_store_ids ?? []).includes(s.id)).length }));
+    const missingCount = stores.map(s => ({ store: s, count: active.filter(v => !(v.recipe_store_ids ?? []).includes(s.id) || !(v.price_store_ids ?? []).includes(s.id)).length }));
 
     const toggle = async (v: Variant, store: Store, on: boolean) => {
         const next = on ? [...new Set([...(v.store_ids ?? []), store.id])] : (v.store_ids ?? []).filter(id => id !== store.id);
@@ -77,7 +77,7 @@ export default function AvailabilityManager({ variants, stores, onChanged, onOpe
                 <div className="flex flex-wrap gap-2">
                     {missingCount.filter(m => m.count > 0).map(m => (
                         <span key={m.store.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-800 text-xs font-bold">
-                            <LuCircleAlert /> {m.count} rasa belum punya resep di {short[m.store.id]}
+                            <LuCircleAlert /> {m.count} rasa belum punya resep atau harga di {short[m.store.id]}
                         </span>
                     ))}
                 </div>
@@ -96,7 +96,10 @@ export default function AvailabilityManager({ variants, stores, onChanged, onOpe
                     <ul className="divide-y divide-primary/10">
                         {active.map(v => {
                             const withRecipe = v.recipe_store_ids ?? [];
+                            const withPrice = v.price_store_ids ?? [];
                             const missing = stores.filter(s => !withRecipe.includes(s.id));
+                            // Recipe but no selling price yet: can't be sold there either.
+                            const missingPrice = stores.filter(s => withRecipe.includes(s.id) && !withPrice.includes(s.id));
                             const source = stores.find(s => withRecipe.includes(s.id));
                             return (
                                 <li key={v.id} className="px-4 sm:px-5 py-3 space-y-2.5">
@@ -110,13 +113,14 @@ export default function AvailabilityManager({ variants, stores, onChanged, onOpe
                                         </div>
                                         <div className="grid grid-cols-2 gap-2 sm:contents">
                                             {stores.map(s => {
-                                                const hasRecipe = withRecipe.includes(s.id);
+                                                // "hasRecipe" gates the switch: a store needs both the recipe and a price.
+                                                const hasRecipe = withRecipe.includes(s.id) && withPrice.includes(s.id);
                                                 const on = (v.store_ids ?? []).includes(s.id);
                                                 const busy = busyKey === `${v.id}-${s.id}`;
                                                 return (
                                                     <label key={s.id}
                                                         className={`flex items-center justify-between sm:justify-center gap-2 h-11 px-3 rounded-xl border sm:border-0 sm:px-0 ${hasRecipe ? 'border-primary/15 cursor-pointer' : 'border-dashed border-primary/15 cursor-not-allowed opacity-60'}`}
-                                                        title={hasRecipe ? `${on ? 'Berhenti jual' : 'Jual'} di ${s.name}` : `Belum ada resep di ${s.name}`}>
+                                                        title={hasRecipe ? `${on ? 'Berhenti jual' : 'Jual'} di ${s.name}` : withRecipe.includes(s.id) ? `Belum ada harga jual di ${s.name}` : `Belum ada resep di ${s.name}`}>
                                                         <span className="sm:hidden text-sm font-bold text-primary/70 truncate">{short[s.id]}</span>
                                                         <input
                                                             type="checkbox"
@@ -136,6 +140,21 @@ export default function AvailabilityManager({ variants, stores, onChanged, onOpe
                                         </div>
                                     </div>
 
+                                    {missingPrice.length > 0 && (
+                                        <div className="flex flex-col gap-2 rounded-xl bg-amber-50 px-3 py-2.5">
+                                            {missingPrice.map(m => (
+                                                <div key={m.id} className="flex flex-wrap items-center gap-2">
+                                                    <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 flex-1 min-w-[180px]">
+                                                        <LuCircleAlert className="shrink-0" /> Belum ada harga jual di {m.name}.
+                                                    </span>
+                                                    <button type="button" onClick={() => onOpenRecipe(v.id, m.id)}
+                                                        className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-amber-900 text-xs font-bold hover:bg-amber-100">
+                                                        <LuPencil /> Isi harga di {short[m.id]}
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                     {missing.length > 0 && (
                                         <div className="flex flex-col gap-2 rounded-xl bg-amber-50 px-3 py-2.5">
                                             {missing.map(m => (

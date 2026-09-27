@@ -3,6 +3,7 @@
 import { LuCheck } from 'react-icons/lu';
 import type { Variant } from '@/types/menu';
 import { buildSelection, selectedVariants, type FlavorSelection } from '@/utils/flavors';
+import { flavorPrice } from '@/utils/pricing';
 
 interface FlavorPickerProps {
     name: string;
@@ -14,6 +15,12 @@ interface FlavorPickerProps {
     showImages?: boolean;
     /** Tailwind radius class for the option cards. */
     radiusClass?: string;
+    /**
+     * With both set, only flavors priced for this box type at this store are offered, each
+     * showing its price (a box costs its most expensive flavor).
+     */
+    storeId?: number | null;
+    boxType?: string;
 }
 
 /**
@@ -29,10 +36,13 @@ export default function FlavorPicker({
     onChange,
     showImages = true,
     radiusClass = 'rounded-xl',
+    storeId,
+    boxType,
 }: FlavorPickerProps) {
-    const active = variants.filter(v => v.is_active);
+    const priced = storeId != null && !!boxType;
     const chosen = selectedVariants({ name, variant_ids: variantIds }, variants);
     const chosenIds = new Set(chosen.map(v => v.id));
+    const active = variants.filter(v => v.is_active && (!priced || chosenIds.has(v.id) || flavorPrice(v, storeId, boxType!) !== null));
 
     const toggle = (v: Variant, checked: boolean) => {
         let next = chosen;
@@ -58,7 +68,13 @@ export default function FlavorPicker({
                             {isChecked && <LuCheck className="text-[10px] stroke-[4]" />}
                         </div>
                         {showImages && v.image_url && <img src={v.image_url} alt={v.variant_name} className="w-8 h-8 rounded-lg object-cover shrink-0" />}
-                        <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">{v.variant_name}</span>
+                        <span className="text-xs font-bold leading-tight select-none flex-1 line-clamp-2 break-words text-left">
+                            {v.variant_name}
+                            {priced && (() => {
+                                const price = flavorPrice(v, storeId, boxType!);
+                                return <span className="block text-[10px] font-semibold text-primary/50 mt-0.5">{price === null ? 'Belum ada harga' : `Rp ${price.toLocaleString('id-ID')}`}</span>;
+                            })()}
+                        </span>
                     </label>
                 );
             })}

@@ -29,6 +29,7 @@ import { printOrder } from '@/utils/printer';
 import type { BoxType } from '@/types/menu';
 import { BOX_TYPES, boxLabelID } from '@/utils/box';
 import FlavorPicker from '@/components/FlavorPicker';
+import { boxPrice, orderTotal, priceRangeLabel } from '@/utils/pricing';
 import { buildSelection, maxFlavorsFor, resolveVariantIds, selectedVariants } from '@/utils/flavors';
 import { subscribePush } from '@/utils/push';
 import Sidebar from '@/components/Sidebar';
@@ -45,6 +46,8 @@ interface OrderItem {
     name: string;
     qty: number;
     variant_ids?: number[];
+    /** Box price charged (most expensive flavor), snapshotted by the backend. */
+    unit_price?: number | null;
 }
 
 interface Order {
@@ -807,6 +810,10 @@ export default function OrdersPage() {
                                             <span className="font-bold text-primary">{order.items.reduce((s, i) => s + i.qty, 0)} pcs</span>
                                         </div>
                                         <div className="flex justify-between text-xs">
+                                            <span className="text-primary/50">Total Harga</span>
+                                            <span className="font-bold text-primary">Rp {orderTotal(order).toLocaleString('id-ID')}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs">
                                             <span className="text-primary/50">Dibuat</span>
                                             <span className="font-bold text-primary">
                                                 {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })}
@@ -1157,8 +1164,7 @@ export default function OrdersPage() {
                                                     <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1">
                                                         {BOX_TYPES.filter(bt => menus.some(m => m.name === bt && m.is_active !== false && (m.store_ids ?? []).includes(form.store_id ?? -1))).map(bt => {
                                                             const isSelected = item.box_type === bt;
-                                                            const menuData = menus.find(m => m.name === bt);
-                                                            const priceStr = menuData ? `Rp ${(menuData.price / 1000)}k` : '...';
+                                                            const priceStr = priceRangeLabel(variants.filter((v: { is_active: boolean }) => v.is_active), form.store_id, bt) ?? 'Belum ada harga';
 
                                                             let Icon = LuLayoutGrid;
                                                             if (bt === 'HALF') Icon = LuLayoutTemplate;
@@ -1222,6 +1228,8 @@ export default function OrdersPage() {
                                                             variantIds={item.variant_ids}
                                                             variants={variants}
                                                             maxFlavors={maxFlavorsFor(menus, item.box_type)}
+                                                            storeId={form.store_id}
+                                                            boxType={item.box_type}
                                                             onChange={sel => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, ...sel } : p) }))}
                                                             showImages={false}
                                                             radiusClass="rounded-lg"
@@ -1230,6 +1238,14 @@ export default function OrdersPage() {
                                                 {!item.name && (
                                                     <p className="text-[10px] text-red-500 font-bold mt-2">* Silahkan pilih minimal 1 rasa</p>
                                                 )}
+                                                {item.name && (() => {
+                                                    const price = boxPrice(variants, item.variant_ids ?? [], form.store_id, item.box_type);
+                                                    return (
+                                                        <p className="text-[11px] font-bold text-primary/60 mt-2">
+                                                            {price === null ? 'Ada rasa tanpa harga di store ini' : `${item.qty} × Rp ${price.toLocaleString('id-ID')}${(item.variant_ids?.length ?? 0) > 1 ? ' (rasa termahal)' : ''} = Rp ${(price * item.qty).toLocaleString('id-ID')}`}
+                                                        </p>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
                                     ))}

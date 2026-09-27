@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
+import { itemSubtotal, orderTotal } from '@/utils/pricing';
 import { LuUpload, LuCheck, LuArrowLeft, LuPackage, LuReceipt } from 'react-icons/lu';
 import { useRouter } from 'next/navigation';
 import { fetchJson } from '@/utils/fetchJson';
@@ -11,6 +12,8 @@ interface OrderItem {
     box_type: 'FULL' | 'HALF';
     name: string;
     qty: number;
+    /** Box price charged (most expensive flavor), snapshotted on the order. */
+    unit_price: number | null;
 }
 
 interface Order {
@@ -39,7 +42,6 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
     const [success, setSuccess] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [order, setOrder] = useState<Order | null>(null);
-    const [menus, setMenus] = useState<any[]>([]);
     const [store, setStore] = useState<StoreBank | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -47,14 +49,10 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
         let cancelled = false;
         const fetchData = async () => {
             try {
-                const [orderRes, menuRes] = await Promise.all([
-                    fetchJson(`${API_URL}${orderPath}`),
-                    fetchJson(`${API_URL}/api/menu`)
-                ]);
+                const orderRes = await fetchJson(`${API_URL}${orderPath}`);
                 if (cancelled) return;
 
                 if (orderRes.status === 'ok') setOrder(orderRes.data);
-                if (menuRes.status === 'ok') setMenus(menuRes.data);
 
                 // Transfer account belongs to the store the order was placed at.
                 const storeId = orderRes.status === 'ok' ? orderRes.data.store_id : null;
@@ -163,8 +161,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                                 </div>
                                 <div className="space-y-2">
                                     {order.items?.map((item, idx) => {
-                                        const menu = menus.find(m => m.name === item.box_type);
-                                        const price = menu ? menu.price * item.qty : 0;
+                                        const price = itemSubtotal(item);
                                         return (
                                             <div key={idx} className="flex justify-between items-start">
                                                 <div className="w-3/4">
@@ -178,10 +175,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                                 <div className="flex justify-between items-center pt-2 mt-2 border-t-2 border-primary/10">
                                     <span className="text-xs font-black uppercase text-primary/70">Total Pembayaran</span>
                                     <span className="text-lg font-black text-brand-maroon">
-                                        Rp {order.items?.reduce((sum, item) => {
-                                            const menu = menus.find(m => m.name === item.box_type);
-                                            return sum + (menu ? menu.price * item.qty : 0);
-                                        }, 0).toLocaleString('id-ID')}
+                                        Rp {orderTotal({ items: order.items ?? [] }).toLocaleString('id-ID')}
                                     </span>
                                 </div>
                             </div>

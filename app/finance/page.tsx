@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useMenuPrices } from '@/hooks/useMenuPrices';
+import { orderTotal, itemSubtotal } from '@/utils/pricing';
 import {
     LuTrendingUp,
     LuCalendarDays,
@@ -58,7 +58,6 @@ const PAYMENT_STYLES: Record<string, string> = {
 export default function FinancePage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
-    const { priceOf, loading: pricesLoading } = useMenuPrices();
     const [showSidebar, setShowSidebar] = useState(false);
     const userRoleData = useUserRole('finance');
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
@@ -77,7 +76,8 @@ export default function FinancePage() {
         return () => { cancelled = true; };
     }, []);
 
-    const orderRevenue = (order: Order) => order.items.reduce((sum, i) => sum + i.qty * priceOf(i.box_type), 0);
+    // Box prices are snapshotted on each item (unit_price) when the order is created or edited.
+    const orderRevenue = (order: Order) => orderTotal(order);
 
     useEffect(() => {
         fetchJson(`${API_URL}/api/stores`)
@@ -164,20 +164,20 @@ export default function FinancePage() {
                 </PageHeader>
 
                 <main className="flex-1 px-4 py-5 space-y-4 pb-16">
-                    {(loading || pricesLoading) && (
+                    {loading && (
                         <div className="flex justify-center pt-20">
                             <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
                         </div>
                     )}
 
-                    {!loading && !pricesLoading && doneOrders.length === 0 && (
+                    {!loading && doneOrders.length === 0 && (
                         <div className="flex flex-col items-center justify-center pt-24 gap-3 text-primary/40">
                             <LuClipboardList className="text-5xl" />
                             <p className="text-sm font-semibold">Belum ada order DONE</p>
                         </div>
                     )}
 
-                    {!loading && !pricesLoading && doneOrders.length > 0 && (
+                    {!loading && doneOrders.length > 0 && (
                         <>
                             {/* Hero Revenue Card */}
                             <section className="bg-primary rounded-3xl p-6 shadow-xl relative overflow-hidden">
@@ -216,18 +216,19 @@ export default function FinancePage() {
                                 </div>
                             </section>
 
-                            {/* Box Price Reference */}
+                            {/* Revenue per box type: prices differ per flavor, so show the average box price */}
                             <section className="grid grid-cols-2 gap-3">
-                                <div className="bg-white/60 rounded-2xl p-4 border border-primary/10">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary/40 mb-1">Full Box</p>
-                                    <p className="text-lg font-black text-primary">{formatRupiah(priceOf('FULL'))}</p>
-                                    <p className="text-[10px] text-primary/40 font-semibold mt-0.5">× {fullBoxCount} = <span className="font-black text-primary/70">{formatRupiah(priceOf('FULL') * fullBoxCount)}</span></p>
-                                </div>
-                                <div className="bg-white/60 rounded-2xl p-4 border border-primary/10">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary/40 mb-1">Half Box</p>
-                                    <p className="text-lg font-black text-primary">{formatRupiah(priceOf('HALF'))}</p>
-                                    <p className="text-[10px] text-primary/40 font-semibold mt-0.5">× {halfBoxCount} = <span className="font-black text-primary/70">{formatRupiah(priceOf('HALF') * halfBoxCount)}</span></p>
-                                </div>
+                                {(['FULL', 'HALF'] as const).map(type => {
+                                    const count = type === 'FULL' ? fullBoxCount : halfBoxCount;
+                                    const revenue = filtered.reduce((s, o) => s + o.items.filter(i => i.box_type === type).reduce((si, i) => si + itemSubtotal(i), 0), 0);
+                                    return (
+                                        <div key={type} className="bg-white/60 rounded-2xl p-4 border border-primary/10">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-primary/40 mb-1">{type === 'FULL' ? 'Full Box' : 'Half Box'}</p>
+                                            <p className="text-lg font-black text-primary">{formatRupiah(revenue)}</p>
+                                            <p className="text-[10px] text-primary/40 font-semibold mt-0.5">{count} box · rata-rata {formatRupiah(count ? Math.round(revenue / count) : 0)}/box</p>
+                                        </div>
+                                    );
+                                })}
                             </section>
 
                             {/* Revenue Per Date Bar Chart */}
@@ -337,7 +338,7 @@ export default function FinancePage() {
                                                                     {item.box_type}
                                                                 </span>
                                                             </div>
-                                                            <span className="font-black text-primary">{formatRupiah(item.qty * priceOf(item.box_type))}</span>
+                                                            <span className="font-black text-primary">{formatRupiah(itemSubtotal(item))}</span>
                                                         </div>
                                                     ))}
                                                     <div className="flex justify-between text-xs pt-2 border-t border-primary/10">

@@ -28,6 +28,7 @@ import { API_URL } from '@/utils/config';
 import type { BoxType, Menu, Variant } from '@/types/menu';
 import { BOX_TYPES, boxLabel, boxLabelID } from '@/utils/box';
 import FlavorPicker from '@/components/FlavorPicker';
+import { boxPrice, itemSubtotal, orderTotal, priceRangeLabel } from '@/utils/pricing';
 import { maxFlavorsFor, resolveVariantIds } from '@/utils/flavors';
 import { normalizeVariant, toTitleCase } from '@/utils/format';
 
@@ -200,14 +201,21 @@ export default function OrderPage() {
     // Box types this store sells: active FULL/HALF menu rows (the menu list is already filtered by store).
     const availableBoxes = BOX_TYPES.filter(bt => menus.some(m => m.name === bt && m.is_active !== false));
 
-    // Boxes to ship; the backend turns them into Biteship items using each box's price, size and weight.
+    // A box costs its most expensive flavor at this store (the backend charges the same).
+    const priceOfItem = useCallback((item: { box_type: string; variant_ids?: number[] }) =>
+        boxPrice(variants, item.variant_ids ?? [], selectedStore?.id, item.box_type) ?? 0, [variants, selectedStore]);
+
+    // Boxes to ship; the backend turns them into Biteship items (size/weight per box, value = average box price).
     const getShippingBoxes = useCallback(() => {
-        const qtyByBox = new Map<string, number>();
+        const byBox = new Map<string, { qty: number; value: number }>();
         for (const p of form.pesanan) {
-            if (p.name) qtyByBox.set(p.box_type, (qtyByBox.get(p.box_type) ?? 0) + (p.qty || 1));
+            if (!p.name) continue;
+            const cur = byBox.get(p.box_type) ?? { qty: 0, value: 0 };
+            const qty = p.qty || 1;
+            byBox.set(p.box_type, { qty: cur.qty + qty, value: cur.value + priceOfItem(p) * qty });
         }
-        return [...qtyByBox.entries()].map(([box_type, qty]) => ({ box_type, qty }));
-    }, [form.pesanan]);
+        return [...byBox.entries()].map(([box_type, b]) => ({ box_type, qty: b.qty, value: Math.round(b.value / b.qty) }));
+    }, [form.pesanan, priceOfItem]);
 
     // Auto-fetch shipping rates when conditions are met
     useEffect(() => {
@@ -395,7 +403,7 @@ export default function OrderPage() {
         setPostalCode(null); setAreaResults([]); setSelectedArea(null);
     };
 
-    const itemsTotal = form.pesanan.reduce((sum, item) => sum + (menus.find(m => m.name === item.box_type)?.price || 0) * item.qty, 0);
+    const itemsTotal = form.pesanan.reduce((sum, item) => sum + priceOfItem(item) * item.qty, 0);
     const grandTotal = itemsTotal + (shippingFee || 0);
 
     if (submittedOrder) {
@@ -423,13 +431,13 @@ export default function OrderPage() {
                             {submittedOrder.items?.map((item: any, i: number) => (
                                 <div key={i} className="flex justify-between text-xs py-1">
                                     <span className="text-primary/70">{item.qty}x {boxLabelID(item.box_type)} · {item.name}</span>
-                                    <span className="font-bold text-primary">Rp {((menus.find(m => m.name === item.box_type)?.price || 0) * item.qty).toLocaleString('id-ID')}</span>
+                                    <span className="font-bold text-primary">Rp {itemSubtotal(item).toLocaleString('id-ID')}</span>
                                 </div>
                             ))}
                         </div>
                         <div className="flex justify-between pt-2 border-t border-primary/10">
                             <span className="font-black text-primary">Total</span>
-                            <span className="font-black text-primary">Rp {submittedOrder.items?.reduce((s: number, i: any) => s + (menus.find(m => m.name === i.box_type)?.price || 0) * i.qty, 0).toLocaleString('id-ID')}</span>
+                            <span className="font-black text-primary">Rp {orderTotal({ items: submittedOrder.items ?? [] }).toLocaleString('id-ID')}</span>
                         </div>
                     </div>
                     {submittedOrder.payment_method === 'TRANSFER' && (
@@ -726,8 +734,7 @@ export default function OrderPage() {
                                             <div className="flex gap-2 flex-1">
                                                 {availableBoxes.map(bt => {
                                                     const isSelected = item.box_type === bt;
-                                                    const menuData = menus.find(m => m.name === bt);
-                                                    const priceStr = menuData ? `Rp ${menuData.price / 1000}k` : '...';
+                                                    const priceStr = priceRangeLabel(variants.filter(v => v.is_active), selectedStore?.id, bt) ?? '...';
                                                     const Icon = bt === 'HALF' ? LuLayoutTemplate : LuLayoutGrid;
                                                     return (
                                                         <button key={bt} onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => { if (i !== idx) return p; if (p.box_type === bt) return p; return { ...p, box_type: bt, name: '', variant_ids: [] }; }) }))}
@@ -780,9 +787,14 @@ export default function OrderPage() {
                                                             variantIds={item.variant_ids}
                                                             variants={variants}
                                                             maxFlavors={maxFlavorsFor(menus, item.box_type)}
+                                                            storeId={selectedStore?.id}
+                                                            boxType={item.box_type}
                                                             onChange={sel => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, ...sel } : p) }))}
                                                         />
                                                     </div>
+                                                    {item.name && (item.variant_ids?.length ?? 0) > 1 && (
+                                                        <p className="text-[10px] font-semibold text-primary/50 mt-2">Harga box mengikuti rasa termahal: Rp {priceOfItem(item).toLocaleString('id-ID')}</p>
+                                                    )}
                                                     {!item.name && item.isExpanded && <p className="text-[10px] text-red-500 font-bold mt-3">* Silahkan pilih minimal 1 rasa</p>}
                                                 </div>
                                             </div>
@@ -824,7 +836,7 @@ export default function OrderPage() {
                                         <button onClick={() => goToStep('menu')} className="text-[10px] font-bold text-primary underline">Edit Pesanan</button>
                                     </div>
                                     {form.pesanan.filter(p => p.name.trim().length > 0 && p.qty > 0).map((item, idx) => {
-                                        const price = menus.find(m => m.name === item.box_type)?.price || 0;
+                                        const price = priceOfItem(item);
                                         return (
                                             <div key={idx} className="flex justify-between items-start gap-3 py-1">
                                                 <div>

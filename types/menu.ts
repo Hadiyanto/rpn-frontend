@@ -29,6 +29,10 @@ export interface Variant {
     store_ids?: number[];
     /** Stores that have a recipe for this flavor. */
     recipe_store_ids?: number[];
+    /** Stores that have a selling price for this flavor. */
+    price_store_ids?: number[];
+    /** Selling price per store: { [store_id]: { price_full, price_half } } (null = not sold in that box). */
+    prices?: Record<string, { price_full: number | string | null; price_half: number | string | null }>;
 }
 
 export interface Store {

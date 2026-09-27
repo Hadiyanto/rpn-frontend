@@ -6,7 +6,6 @@ import type { BoxType, Menu, Store } from '@/types/menu';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 import { BOX_TYPES, boxLabelID } from '@/utils/box';
-import { formatRupiah } from '@/utils/format';
 import { Card, ConfirmBar, EmptyState, Field, SectionHeader, StatusPill, buttonDanger, buttonPrimary, buttonSecondary, inputClass } from './ui';
 
 type Notify = (title: string, message: string, type: 'success' | 'error') => void;
@@ -140,12 +139,10 @@ export default function MenuBoxManager({ menus, stores, onChanged, notify }: { m
                                 {missing.map(t => <option key={t} value={t}>{boxLabelID(t)} ({t})</option>)}
                             </select>
                         </Field>
-                        <Field label="Harga (Rp)">
-                            <input className={inputClass} type="number" min="0" inputMode="numeric" value={newBox.price} onChange={e => setNewBox({ ...newBox, price: e.target.value })} placeholder="mis. 65000" />
-                        </Field>
+                        <p className="text-xs text-primary/60 self-center">Harga jual diatur per rasa di Varian &amp; resep.</p>
                         <div className="col-span-2 sm:col-span-1 flex gap-2">
                             <button type="button" className={`${buttonSecondary} flex-1 sm:flex-none`} onClick={() => setNewBox(null)}>Batal</button>
-                            <button type="button" className={`${buttonPrimary} flex-1 sm:flex-none`} disabled={busy || !newBox.price} onClick={create}>Simpan</button>
+                            <button type="button" className={`${buttonPrimary} flex-1 sm:flex-none`} disabled={busy} onClick={create}>Simpan</button>
                         </div>
                     </div>
                     <p className="text-xs text-primary/50">Maks rasa, porsi resep, dan ukuran kirim diisi otomatis sesuai jenis box. Bisa diubah setelah dibuat.</p>
@@ -170,7 +167,7 @@ export default function MenuBoxManager({ menus, stores, onChanged, notify }: { m
                             {!isEditing ? (
                                 <>
                                     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                                        <dt className="text-primary/50">Harga</dt><dd className="font-bold text-primary text-right tabular-nums">{formatRupiah(Number(m.price))}</dd>
+                                        <dt className="text-primary/50">Harga</dt><dd className="font-bold text-primary text-right">Per rasa (Varian &amp; resep)</dd>
                                         <dt className="text-primary/50">Maks rasa</dt><dd className="font-bold text-primary text-right">{m.max_flavors ?? '—'}</dd>
                                         <dt className="text-primary/50">Porsi resep</dt><dd className="font-bold text-primary text-right tabular-nums">{m.box_multiplier ?? '—'}×</dd>
                                         <dt className="text-primary/50">Ukuran kirim</dt><dd className="font-bold text-primary text-right tabular-nums">{m.length_cm ?? '—'}×{m.width_cm ?? '—'}×{m.height_cm ?? '—'} cm · {m.weight_gram ?? '—'} g</dd>
@@ -181,7 +178,6 @@ export default function MenuBoxManager({ menus, stores, onChanged, notify }: { m
                             ) : (
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-3">
-                                        <Field label="Harga (Rp)"><input className={inputClass} type="number" min="0" value={draft.price} onChange={e => setDraft({ ...draft, price: e.target.value })} /></Field>
                                         <Field label="Maks rasa" hint={m.name === 'HALF' ? 'Box Kecil selalu 1 rasa' : '1–3 rasa berbeda'}>
                                             <input className={inputClass} type="number" min="1" max={m.name === 'HALF' ? 1 : 3} disabled={m.name === 'HALF'} value={draft.max_flavors} onChange={e => setDraft({ ...draft, max_flavors: e.target.value })} />
                                         </Field>

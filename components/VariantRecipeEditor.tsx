@@ -155,10 +155,37 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
 
     const updateRow = (i: number, patch: Partial<RecipeRow>) => setRows(prev => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
+    // Selling price at this store; empty = not sold in that box type here. Saved with the recipe
+    // and copied along to the stores ticked under "Simpan juga ke".
+    const storedPrice = variant.prices?.[String(storeId)];
+    const initialPrice = {
+        full: storedPrice?.price_full == null ? '' : String(Number(storedPrice.price_full)),
+        half: storedPrice?.price_half == null ? '' : String(Number(storedPrice.price_half)),
+    };
+    const [price, setPrice] = useState(initialPrice);
+    const [savedPrice, setSavedPrice] = useState(initialPrice);
+    useEffect(() => {
+        setPrice(initialPrice);
+        setSavedPrice(initialPrice);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [variant.id, storeId]);
+    const priceOf = (box: 'FULL' | 'HALF') => {
+        const v = parseFloat(box === 'FULL' ? price.full : price.half);
+        return Number.isFinite(v) ? v : null;
+    };
+
     const saveRecipe = async () => {
         const items = rows.filter(r => r.stock_id !== '' && r.qty_gram.trim() !== '').map(r => ({ stock_id: Number(r.stock_id), qty_gram: Number(r.qty_gram) }));
         setSaving(true);
         try {
+            if (price.full !== savedPrice.full || price.half !== savedPrice.half) {
+                await fetchJson(`${API_URL}/api/variant-price`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ variant_id: variant.id, store_id: storeId, price_full: price.full.trim() || null, price_half: price.half.trim() || null }),
+                });
+                setSavedPrice(price);
+            }
             const json = await fetchJson(`${API_URL}/api/variant-recipe`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -205,6 +232,30 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
 
     return (
         <div className="space-y-4">
+            <div className="space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-primary/60">Harga jual{storeName ? ` · ${storeName}` : ''}</p>
+                <div className="grid grid-cols-2 gap-2">
+                    {(['FULL', 'HALF'] as const).map(box => (
+                        <label key={box} className="space-y-1">
+                            <span className="text-xs font-semibold text-primary/60">{box === 'FULL' ? 'Box Besar' : 'Box Kecil'}</span>
+                            <div className="relative">
+                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-primary/50">Rp</span>
+                                <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="0"
+                                    value={box === 'FULL' ? price.full : price.half}
+                                    onChange={e => setPrice(p => box === 'FULL' ? { ...p, full: e.target.value } : { ...p, half: e.target.value })}
+                                    placeholder="Kosong = tidak dijual"
+                                    className={`${inputClass} pl-9 tabular-nums`}
+                                />
+                            </div>
+                        </label>
+                    ))}
+                </div>
+                <p className="text-[11px] text-primary/50">Box mix dihargai rasa termahal di dalamnya. Harga kosong = rasa ini tidak bisa dipilih untuk box itu di store ini. Disimpan dengan tombol Simpan resep.</p>
+            </div>
+
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-brand-yellow/20 px-4 py-3">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-primary/60">HPP bahan baku</span>
                 {(['FULL', 'HALF'] as const).map(box => {
@@ -219,6 +270,15 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                                     {(h.hpp_labor ?? 0) > 0 && <> + tenaga kerja {formatRupiah(Math.round(h.hpp_labor ?? 0))}</>})
                                 </span>
                             )}
+                            {h && priceOf(box) !== null && priceOf(box)! > 0 && (() => {
+                                const sell = priceOf(box)!;
+                                const margin = ((sell - h.hpp) / sell) * 100;
+                                return (
+                                    <span className="ml-1 text-[11px] font-bold text-primary/70" title="Margin terhadap HPP di sistem (belum termasuk biaya yang tidak tercatat, mis. pisang atau sewa)">
+                                        · jual {formatRupiah(sell)} · margin {margin.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%
+                                    </span>
+                                );
+                            })()}
                         </span>
                     );
                 })}
@@ -321,7 +381,7 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                         <LuPlus /> Bahan
                     </button>
                     <button type="button" onClick={saveRecipe} disabled={saving || loading} className={buttonPrimary}>
-                        {saving ? 'Menyimpan…' : 'Simpan resep'}
+                        {saving ? 'Menyimpan…' : 'Simpan resep & harga'}
                     </button>
                 </div>
             </div>
@@ -347,7 +407,7 @@ export default function VariantRecipeEditor({ variant, storeId, storeName, store
                             );
                         })}
                     </div>
-                    <p className="text-[11px] text-primary/50">Saat Simpan resep, resep yang sama ikut disimpan di store yang dicentang dan rasa ini langsung dijual di sana. Bahan yang belum ada dibuat dengan stok 0.</p>
+                    <p className="text-[11px] text-primary/50">Saat Simpan resep, resep dan harga jual yang sama ikut disimpan di store yang dicentang dan rasa ini langsung dijual di sana. Bahan yang belum ada dibuat dengan stok 0.</p>
                 </div>
             )}
         </div>

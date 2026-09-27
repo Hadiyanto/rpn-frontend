@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useMenuPrices } from '@/hooks/useMenuPrices';
+import { orderTotal, itemSubtotal } from '@/utils/pricing';
 import {
     LuArrowLeftRight,
     LuTrendingUp,
@@ -34,6 +34,7 @@ interface OrderItem {
     qty: number;
     name: string;
     box_type: 'FULL' | 'HALF';
+    unit_price: number | null;
 }
 
 interface Order {
@@ -86,8 +87,8 @@ export default function CashflowPage() {
     const [loading, setLoading] = useState(true);
     const [showSidebar, setShowSidebar] = useState(false);
     const userRoleData = useUserRole('cashflow');
-    const { priceOf, loading: pricesLoading } = useMenuPrices();
-    const orderRevenue = (order: Order) => order.items.reduce((sum, i) => sum + i.qty * priceOf(i.box_type), 0);
+    // Box prices are snapshotted on each item (unit_price) when the order is created or edited.
+    const orderRevenue = (order: Order) => orderTotal(order);
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
     const [activeTab, setActiveTab] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
     const [showAllItems, setShowAllItems] = useState(false);
@@ -247,20 +248,20 @@ export default function CashflowPage() {
                 </PageHeader>
 
                 <main className="flex-1 px-4 py-5 space-y-4 pb-24">
-                    {(loading || pricesLoading) && (
+                    {loading && (
                         <div className="flex justify-center pt-20">
                             <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
                         </div>
                     )}
 
-                    {!loading && !pricesLoading && doneOrders.length === 0 && expenses.length === 0 && (
+                    {!loading && doneOrders.length === 0 && expenses.length === 0 && (
                         <div className="flex flex-col items-center justify-center pt-24 gap-3 text-primary/40">
                             <LuClipboardList className="text-5xl" />
                             <p className="text-sm font-semibold">Belum ada data</p>
                         </div>
                     )}
 
-                    {!loading && !pricesLoading && (doneOrders.length > 0 || expenses.length > 0) && (
+                    {!loading && (doneOrders.length > 0 || expenses.length > 0) && (
                         <>
                             {/* Hero Card */}
                             <section className="bg-primary rounded-3xl p-6 shadow-xl relative overflow-hidden">
