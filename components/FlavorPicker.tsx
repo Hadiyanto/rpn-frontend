@@ -34,7 +34,8 @@ export default function FlavorPicker({
     variants,
     maxFlavors,
     onChange,
-    showImages = true,
+    // Photos live in the gallery above the order form; the checkboxes stay compact.
+    showImages = false,
     radiusClass = 'rounded-xl',
     storeId,
     boxType,

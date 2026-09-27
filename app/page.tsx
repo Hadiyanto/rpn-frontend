@@ -28,8 +28,9 @@ import { API_URL } from '@/utils/config';
 import type { BoxType, Menu, Variant } from '@/types/menu';
 import { BOX_TYPES, boxLabel, boxLabelID } from '@/utils/box';
 import FlavorPicker from '@/components/FlavorPicker';
-import { boxPrice, itemSubtotal, orderTotal, priceRangeLabel } from '@/utils/pricing';
-import { maxFlavorsFor, resolveVariantIds } from '@/utils/flavors';
+import FlavorGallery, { type PickOption } from '@/components/FlavorGallery';
+import { boxPrice, flavorPrice, itemSubtotal, orderTotal, priceRangeLabel } from '@/utils/pricing';
+import { buildSelection, maxFlavorsFor, resolveVariantIds, selectedVariants } from '@/utils/flavors';
 import { normalizeVariant, toTitleCase } from '@/utils/format';
 
 // Leaflet map loaded client-side only
@@ -126,6 +127,7 @@ export default function OrderPage() {
 
     const [menus, setMenus] = useState<Menu[]>([]);
     const [variants, setVariants] = useState<Variant[]>([]);
+    const [bestSellers, setBestSellers] = useState<{ variant_id: number; sold: number }[]>([]);
     const [quotas, setQuotas] = useState<any[]>([]);
     const [quotasLoading, setQuotasLoading] = useState(true);
 
@@ -156,6 +158,10 @@ export default function OrderPage() {
             console.error(err);
             if (!cancelled) showToast('❌ Error', 'Gagal memuat menu. Silakan refresh halaman.', 'error');
         }).finally(() => { if (!cancelled) setQuotasLoading(false); });
+        // Gallery order + "Terlaris" badge; optional, so a failure just keeps the catalog order.
+        fetchJson(`${API_URL}/api/variants/best-sellers?store_id=${selectedStore.id}`)
+            .then(json => { if (!cancelled) setBestSellers(json.data ?? []); })
+            .catch(() => { if (!cancelled) setBestSellers([]); });
         return () => { cancelled = true; };
     }, [selectedStore]);
 
@@ -204,6 +210,55 @@ export default function OrderPage() {
     // A box costs its most expensive flavor at this store (the backend charges the same).
     const priceOfItem = useCallback((item: { box_type: string; variant_ids?: number[] }) =>
         boxPrice(variants, item.variant_ids ?? [], selectedStore?.id, item.box_type) ?? 0, [variants, selectedStore]);
+
+    // Flavors the gallery may offer: active and priced at this store for at least one sold box type.
+    const galleryVariants = variants.filter(v => v.is_active && availableBoxes.some(bt => flavorPrice(v, selectedStore?.id, bt) !== null));
+
+    /**
+     * "Pilih rasa ini" from the gallery, applied to the last item:
+     *  - no flavor yet → pick it there;
+     *  - box still has room (Box Besar up to its max) → choose: mix into that item, or a new item;
+     *  - box full / Box Kecil / already chosen → a new item with just this flavor.
+     */
+    const galleryPickOptions = (v: Variant): PickOption[] => {
+        const idx = form.pesanan.length - 1;
+        const item = form.pesanan[idx];
+        const sellsIn = (bt: string) => availableBoxes.includes(bt as BoxType) && flavorPrice(v, selectedStore?.id, bt) !== null;
+        const chosen = selectedVariants(item, variants);
+        const newItemBox = (sellsIn(item.box_type) ? item.box_type : availableBoxes.find(sellsIn)) as BoxType | undefined;
+
+        const addAsNewItem: PickOption = {
+            label: `Jadikan Item ${idx + 2}`,
+            run: () => {
+                setForm(f => ({ ...f, pesanan: [...f.pesanan.map(p => ({ ...p, isExpanded: false })), { ...emptyItem(), box_type: newItemBox ?? 'FULL', ...buildSelection([v]) }] }));
+                showToast('✅ Ditambahkan', `${v.variant_name} sebagai Item ${idx + 2}`, 'success');
+            },
+        };
+
+        if (chosen.length === 0) {
+            const box = sellsIn(item.box_type) ? item.box_type : newItemBox;
+            return [{
+                label: `Pilih untuk Item ${idx + 1}`,
+                run: () => {
+                    setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, box_type: box ?? p.box_type, ...buildSelection([v]) } : p) }));
+                    showToast('✅ Dipilih', `${v.variant_name} untuk Item ${idx + 1}`, 'success');
+                },
+            }];
+        }
+        if (chosen.some(c => c.id === v.id)) {
+            return [{ label: `Sudah dipilih di Item ${idx + 1}`, disabled: true }, addAsNewItem];
+        }
+        if (chosen.length < maxFlavorsFor(menus, item.box_type) && sellsIn(item.box_type)) {
+            return [{
+                label: `Campur ke Item ${idx + 1} (jadi ${chosen.length + 1} rasa)`,
+                run: () => {
+                    setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, ...buildSelection([...chosen, v]) } : p) }));
+                    showToast('✅ Dicampur', `Item ${idx + 1}: ${[...chosen, v].map(c => c.variant_name).join(' + ')}`, 'success');
+                },
+            }, addAsNewItem];
+        }
+        return [{ ...addAsNewItem, label: `Tambah sebagai Item ${idx + 2}` }];
+    };
 
     // Boxes to ship; the backend turns them into Biteship items (size/weight per box, value = average box price).
     const getShippingBoxes = useCallback(() => {
@@ -717,6 +772,8 @@ export default function OrderPage() {
 
                     {step === 'menu' && (
                         <>
+                            <FlavorGallery variants={galleryVariants} bestSellers={bestSellers} pickOptions={galleryPickOptions} />
+
                             {/* Pesanan */}
                             <div className="space-y-3">
                                 <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Pesanan *</label>
