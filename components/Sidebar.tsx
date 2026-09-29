@@ -78,23 +78,26 @@ export default function Sidebar({ open, onClose, allowedPages, userEmail, userRo
                 className={`fixed top-0 left-0 h-full w-72 max-w-[80vw] z-[70] flex flex-col bg-primary shadow-2xl transition-transform duration-300 ease-out ${open ? 'translate-x-0' : '-translate-x-full'}`}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 pt-12 pb-6 border-b border-white/10">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-brand-yellow flex items-center justify-center">
+                {/* Long emails truncate instead of pushing the close button off the drawer. */}
+                <div className="flex items-center gap-3 px-5 pt-12 pb-6 border-b border-white/10">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-10 h-10 shrink-0 rounded-2xl bg-brand-yellow flex items-center justify-center">
                             <LuUser className="text-primary text-lg" />
                         </div>
-                        <div>
-                            <p className="text-brand-yellow text-sm font-extrabold leading-tight">
+                        <div className="min-w-0">
+                            <p className="text-brand-yellow text-sm font-extrabold leading-tight truncate" title={userEmail || BRAND_NAME}>
                                 {userEmail || BRAND_NAME}
                             </p>
                             <p className="text-white/40 text-[10px] font-medium">{displayRole}</p>
                         </div>
                     </div>
                     <button
+                        type="button"
                         onClick={onClose}
-                        className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
+                        aria-label="Tutup menu"
+                        className="w-9 h-9 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
                     >
-                        <LuX className="text-white text-sm" />
+                        <LuX className="text-white text-base" />
                     </button>
                 </div>
 

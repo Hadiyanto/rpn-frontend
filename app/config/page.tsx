@@ -14,6 +14,7 @@ import VariantManager from '@/components/config/VariantManager';
 import AvailabilityManager from '@/components/config/AvailabilityManager';
 import QuotaManager, { type DailyQuota, type HourlyQuota } from '@/components/config/QuotaManager';
 import StoreSettings from '@/components/config/StoreSettings';
+import WhatsAppManager from '@/components/WhatsAppManager';
 import type { StockItem } from '@/components/VariantRecipeEditor';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useToast } from '@/hooks/useToast';
@@ -21,7 +22,6 @@ import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
 import type { Menu, Store, Variant } from '@/types/menu';
 
-// WhatsApp settings are hidden for now (components/WhatsAppManager.tsx still exists).
 const TABS = [
     { key: 'setup', label: 'Setup' },
     { key: 'menu', label: 'Menu box' },
@@ -29,6 +29,7 @@ const TABS = [
     { key: 'tersedia', label: 'Ketersediaan' },
     { key: 'kuota', label: 'Kuota' },
     { key: 'store', label: 'Store' },
+    { key: 'wa', label: 'WhatsApp' },
 ] as const;
 type TabKey = typeof TABS[number]['key'];
 
@@ -180,6 +181,7 @@ export default function ConfigPage() {
                         {tab === 'varian' && <VariantManager variants={variants} stores={stores} stocks={stocks} activeStoreId={activeStore.id} onChanged={refresh} notify={notify} focusVariantId={focusVariantId} onFocusHandled={() => setFocusVariantId(null)} />}
                         {tab === 'tersedia' && <AvailabilityManager variants={variants} stores={stores} onChanged={refresh} onOpenRecipe={openRecipe} notify={notify} />}
                         {tab === 'kuota' && <QuotaManager key={activeStore.id} store={activeStore} quotas={quotas} hourlyQuotas={hourlyQuotas} onChanged={refresh} notify={notify} />}
+                        {tab === 'wa' && <WhatsAppManager />}
                         {tab === 'store' && <StoreSettings store={activeStore} stores={stores} onSaved={() => { loadStores(); refresh(); }} notify={notify} />}
                     </>
                 )}
