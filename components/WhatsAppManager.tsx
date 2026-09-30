@@ -35,6 +35,8 @@ const hasUnfilledVariables = (text: string) => {
 
 export default function WhatsAppManager() {
     const [isConnected, setIsConnected] = useState(false);
+    // Backend state: disabled | starting | qr | connected | replaced (older backends: undefined).
+    const [waState, setWaState] = useState<string | null>(null);
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [showMessageModal, setShowMessageModal] = useState(false);
@@ -105,6 +107,11 @@ export default function WhatsAppManager() {
             if (response.ok) {
                 const data = await response.json();
                 setIsConnected(data.connected);
+                setWaState(data.state ?? null);
+                if (data.disabled) {
+                    setQrCode(null);
+                    return;
+                }
 
                 // If not connected and no QR, fetch QR
                 if (!data.connected && !qrCode && !isLoading) {
@@ -305,6 +312,27 @@ export default function WhatsAppManager() {
                             <>
                                 <MdCheckCircle className="text-green-500" />
                                 <span className="text-xs text-green-600 font-bold">Terhubung</span>
+                            </>
+                        ) : waState === 'disabled' ? (
+                            <>
+                                <MdError className="text-primary/40" />
+                                <span className="text-xs text-primary/60 font-bold">Nonaktif di server ini (WHATSAPP_DISABLED=true)</span>
+                            </>
+                        ) : waState === 'replaced' ? (
+                            <>
+                                <MdError className="text-red-500" />
+                                <span className="text-xs text-red-600 font-bold">Dipakai di perangkat/server lain — klik QR baru lalu scan ulang</span>
+                            </>
+                        ) : qrCode ? (
+                            // A QR on screen means the bot is waiting to be linked, not broken.
+                            <>
+                                <MdQrCode className="text-amber-500" />
+                                <span className="text-xs text-amber-700 font-bold">Menunggu scan QR</span>
+                            </>
+                        ) : waState === 'starting' ? (
+                            <>
+                                <MdRefresh className="text-primary/50 animate-spin" />
+                                <span className="text-xs text-primary/60 font-bold">Menyiapkan koneksi…</span>
                             </>
                         ) : (
                             <>
