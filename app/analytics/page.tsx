@@ -28,10 +28,13 @@ interface Order {
     pickup_date: string;
     pickup_time: string;
     note: string | null;
-    status: 'PENDING' | 'CONFIRMED' | 'DONE' | 'CANCELLED';
+    status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE' | 'CANCELLED';
     created_at: string;
     items: OrderItem[];
 }
+
+// Not real sales: excluded from the "Semua" totals.
+const EXCLUDED_FROM_SALES: Order['status'][] = ['UNPAID', 'CANCELLED'];
 
 function formatDate(dateStr: string) {
     const [y, m, d] = dateStr.split('-');
@@ -79,11 +82,11 @@ export default function AnalyticsPage() {
 
     const availableDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort();
     const effectiveEnd = rangeEnd ?? rangeStart;
-    const dayOrders = orders.filter(o => {
-        const matchDate = !rangeStart || (o.pickup_date >= rangeStart && o.pickup_date <= (effectiveEnd ?? rangeStart));
-        const matchStatus = activeStatus === 'ALL' || o.status === activeStatus;
-        return matchDate && matchStatus;
-    });
+    // "Semua" = valid sales only: unpaid and cancelled orders are not counted (pick their chip to see them).
+    const matchStatus = (o: Order) => activeStatus === 'ALL' ? !EXCLUDED_FROM_SALES.includes(o.status) : o.status === activeStatus;
+    // Date range only, all statuses — for the status breakdown.
+    const rangeOrders = orders.filter(o => !rangeStart || (o.pickup_date >= rangeStart && o.pickup_date <= (effectiveEnd ?? rangeStart)));
+    const dayOrders = rangeOrders.filter(matchStatus);
     const totalOrders = dayOrders.length;
     const totalItems = dayOrders.reduce((s, o) => s + o.items.reduce((si, i) => si + i.qty, 0), 0);
 
@@ -111,7 +114,7 @@ export default function AnalyticsPage() {
     // Chart: total orders per date — ikut filter status
     const ordersByDate: Record<string, number> = {};
     orders
-        .filter(o => activeStatus === 'ALL' || o.status === activeStatus)
+        .filter(matchStatus)
         .forEach(o => {
             ordersByDate[o.pickup_date] = (ordersByDate[o.pickup_date] ?? 0) + 1;
         });
@@ -455,8 +458,8 @@ export default function AnalyticsPage() {
                             <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
                                 <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black mb-4">Status Order</p>
                                 {(['UNPAID', 'PAID', 'CONFIRMED', 'DONE', 'CANCELLED'] as const).map(status => {
-                                    const count = dayOrders.filter(o => o.status === status).length;
-                                    const pct = totalOrders > 0 ? Math.round((count / totalOrders) * 100) : 0;
+                                    const count = rangeOrders.filter(o => o.status === status).length;
+                                    const pct = rangeOrders.length > 0 ? Math.round((count / rangeOrders.length) * 100) : 0;
                                     const colors: Record<string, string> = {
                                         UNPAID: 'bg-orange-400',
                                         PAID: 'bg-teal-400',

@@ -34,7 +34,7 @@ interface Order {
     pickup_time: string | null;
     note: string | null;
     status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE';
-    payment_method: 'TRANSFER' | 'CASH' | null;
+    payment_method: 'TRANSFER' | 'QRIS' | 'CASH' | null;
     created_at: string;
     items: OrderItem[];
     store_id: number | null;
@@ -52,6 +52,7 @@ function formatDate(dateStr: string) {
 
 const PAYMENT_STYLES: Record<string, string> = {
     TRANSFER: 'bg-blue-100 text-blue-600',
+    QRIS: 'bg-violet-100 text-violet-600',
     CASH: 'bg-emerald-100 text-emerald-600',
 };
 
@@ -61,7 +62,7 @@ export default function FinancePage() {
     const [showSidebar, setShowSidebar] = useState(false);
     const userRoleData = useUserRole('finance');
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
-    const [activePayment, setActivePayment] = useState<'ALL' | 'TRANSFER' | 'CASH'>('ALL');
+    const [activePayment, setActivePayment] = useState<'ALL' | 'TRANSFER' | 'QRIS' | 'CASH'>('ALL');
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [showAllOrders, setShowAllOrders] = useState(false);
     const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
@@ -155,9 +156,9 @@ export default function FinancePage() {
 
                     {/* Payment method filter chips */}
                     <ChipRow label="Metode bayar">
-                        {(['ALL', 'TRANSFER', 'CASH'] as const).map(pm => (
+                        {(['ALL', 'TRANSFER', 'QRIS', 'CASH'] as const).map(pm => (
                             <button key={pm} onClick={() => setActivePayment(pm)} className={chipClass(activePayment === pm)}>
-                                {pm === 'ALL' ? 'Semua' : pm === 'TRANSFER' ? 'Transfer' : 'Cash'}
+                                {pm === 'ALL' ? 'Semua' : pm === 'TRANSFER' ? 'Transfer' : pm === 'QRIS' ? 'QRIS' : 'Cash'}
                             </button>
                         ))}
                     </ChipRow>

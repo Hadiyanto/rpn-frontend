@@ -44,7 +44,7 @@ interface Order {
     pickup_time: string | null;
     note: string | null;
     status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE';
-    payment_method: 'TRANSFER' | 'CASH' | null;
+    payment_method: 'TRANSFER' | 'QRIS' | 'CASH' | null;
     created_at: string;
     items: OrderItem[];
     store_id: number | null;

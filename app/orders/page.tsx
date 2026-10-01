@@ -58,7 +58,7 @@ interface Order {
     pickup_time: string;
     note: string | null;
     status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE';
-    payment_method: 'TRANSFER' | 'CASH' | null;
+    payment_method: 'TRANSFER' | 'QRIS' | 'CASH' | null;
     transfer_img_url: string | null;
     created_at: string;
     items: OrderItem[];
@@ -88,11 +88,13 @@ const STATUS_LABEL: Record<string, string> = {
 
 const PAYMENT_STYLES: Record<string, string> = {
     TRANSFER: 'bg-blue-100 text-blue-600',
+    QRIS: 'bg-violet-100 text-violet-600',
     CASH: 'bg-emerald-100 text-emerald-600',
 };
 
 const PAYMENT_LABEL: Record<string, string> = {
     TRANSFER: 'Transfer',
+    QRIS: 'QRIS',
     CASH: 'Cash',
 };
 
@@ -326,7 +328,7 @@ export default function OrdersPage() {
         pickup_date: getTodayStr(),
         pickup_time: ':',
         note: '',
-        payment_method: '' as '' | 'TRANSFER' | 'CASH',
+        payment_method: '' as '' | 'TRANSFER' | 'QRIS' | 'CASH',
         // Quota, opening hours and the order itself are per store.
         store_id: null as number | null,
         pesanan: [emptyItem()]
@@ -748,6 +750,7 @@ export default function OrdersPage() {
                                                 >
                                                     <option value="">--</option>
                                                     <option value="TRANSFER">Transfer</option>
+                                                    <option value="QRIS">QRIS</option>
                                                     <option value="CASH">Cash</option>
                                                 </select>
                                                 <LuChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" />
@@ -900,7 +903,7 @@ export default function OrdersPage() {
                                                             pickup_date: order.pickup_date,
                                                             pickup_time: order.pickup_time?.slice(0, 5) || ':',
                                                             note: order.note || '',
-                                                            payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'CASH',
+                                                            payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'QRIS' | 'CASH',
                                                             store_id: order.store_id,
                                                             pesanan: order.items.map(i => ({ box_type: i.box_type as BoxType, name: i.name, qty: i.qty, variant_ids: i.variant_ids })),
                                                         });
@@ -1262,6 +1265,7 @@ export default function OrdersPage() {
                                         >
                                             <option value="">Pilih metode pembayaran...</option>
                                             <option value="TRANSFER">Transfer</option>
+                                            <option value="QRIS">QRIS</option>
                                             <option value="CASH">Cash</option>
                                         </select>
                                         <LuChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
