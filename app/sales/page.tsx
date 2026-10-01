@@ -407,16 +407,18 @@ export default function SalesAnalyticsPage() {
                             {/* Orders per Time Slot Chart */}
                             {timeSlots.length > 0 && (
                                 <section className="bg-white/60 rounded-2xl p-5 border border-primary/10">
-                                    <div className="mb-5">
+                                    <div className="mb-2">
                                         <p className="text-[10px] uppercase tracking-widest text-primary/50 font-black">Orders per Waktu Pengambilan</p>
                                         <p className="text-3xl font-black text-primary mt-1">{totalOrders} <span className="text-sm font-bold text-primary/40">order</span></p>
                                     </div>
-                                    <div className="flex gap-3 items-end h-36 px-1">
+                                    {/* Many slots don't fit the card: scroll inside it instead of overflowing. pt-8 leaves room for the peak badge. */}
+                                    <div className="overflow-x-auto scrollbar-hide pt-8">
+                                    <div className="flex gap-2 items-end h-36 px-1 min-w-full w-max">
                                         {timeSlots.map(([slot, count]) => {
                                             const heightPct = Math.round((count / maxSlotCount) * 100);
                                             const isPeak = count === maxSlotCount;
                                             return (
-                                                <div key={slot} className="flex flex-col items-center gap-2 flex-1 h-full justify-end relative">
+                                                <div key={slot} className="flex flex-col items-center gap-2 flex-1 min-w-[40px] h-full justify-end relative">
                                                     {isPeak && (
                                                         <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-brand-yellow text-[9px] font-black px-2 py-0.5 rounded-full shadow whitespace-nowrap">
                                                             ⭐ {count}
@@ -430,6 +432,7 @@ export default function SalesAnalyticsPage() {
                                                 </div>
                                             );
                                         })}
+                                    </div>
                                     </div>
                                 </section>
                             )}
