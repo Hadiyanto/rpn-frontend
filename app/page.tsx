@@ -372,7 +372,7 @@ export default function OrderPage() {
 
     // No hourly slots configured = no hourly cap; see pickupHourOptions.
     const hasHourlySlots = availableHours.length > 0;
-    const pickupHours = pickupHourOptions(availableHours, selectedStore?.open_time);
+    const pickupHours = pickupHourOptions(availableHours, selectedStore);
 
     const getIsHourAvailable = (hStr: string) => {
         if (!form.pickup_date || !selectedStore) return false;
@@ -732,7 +732,7 @@ export default function OrderPage() {
                                                             let isAvail = getIsHourAvailable(hDisplay + ':00');
                                                             if (deliveryMethod === 'store_delivery' && selectedShippingType === 'same_day' && hNum > 12) isAvail = false;
                                                             return (
-                                                                <button key={hDisplay} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: withPickupHour(hDisplay, f.pickup_time) })); }}
+                                                                <button key={hDisplay} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: withPickupHour(hDisplay, f.pickup_time, selectedStore) })); }}
                                                                     className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail ? 'opacity-30 cursor-not-allowed' : isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>
                                                                     {hDisplay}
                                                                 </button>
@@ -747,7 +747,7 @@ export default function OrderPage() {
                                                             const isSelected = form.pickup_time.split(':')[1] === m;
                                                             const hDisplay = form.pickup_time.split(':')[0];
                                                             // Pick an hour first.
-                                                            let isAvail = !!hDisplay && isPickupMinuteAllowed(hDisplay, m);
+                                                            let isAvail = !!hDisplay && isPickupMinuteAllowed(hDisplay, m, selectedStore);
                                                             if (deliveryMethod === 'store_delivery' && selectedShippingType === 'same_day' && hDisplay === '12' && m !== '00') isAvail = false;
                                                             return (
                                                                 <button key={m} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: `${hDisplay}:${m}` })); }}

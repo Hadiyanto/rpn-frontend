@@ -44,6 +44,8 @@ export interface Store {
     latitude: number | null;
     longitude: number | null;
     open_time: string | null;
+    /** Latest pickup time ("HH:mm"). */
+    last_pickup_time?: string | null;
     is_active: boolean;
     bank_name: string | null;
     bank_account_number: string | null;

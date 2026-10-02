@@ -156,7 +156,7 @@ export default function OrdersPage() {
     const [printingId, setPrintingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [showSidebar, setShowSidebar] = useState(false);
-    const [stores, setStores] = useState<{ id: number; name: string; open_time?: string | null }[]>([]);
+    const [stores, setStores] = useState<{ id: number; name: string; open_time?: string | null; last_pickup_time?: string | null }[]>([]);
     const [storeFilter, setStoreFilter] = useState<number | null>(null);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const userRoleData = useUserRole('orders');
@@ -370,6 +370,9 @@ export default function OrdersPage() {
             .catch(console.error);
         return () => { cancelled = true; };
     }, [form.pickup_date, form.store_id]);
+
+    // Store of the order being added/edited: its opening and last pickup times bound the hours.
+    const formStore = stores.find(s => s.id === Number(form.store_id));
 
     const getIsHourAvailable = (hStr: string) => {
         if (!form.pickup_date) return false;
@@ -1077,7 +1080,7 @@ export default function OrdersPage() {
                                                         </div>
                                                         <div className="p-1.5 space-y-0.5">
                                                             {/* Hours = the store's active hourly slots, or every opening hour when none are configured. */}
-                                                            {pickupHourOptions(availableHours, stores.find(s => s.id === Number(form.store_id))?.open_time).map(hDisplay => {
+                                                            {pickupHourOptions(availableHours, formStore).map(hDisplay => {
                                                                 const hStr = `${hDisplay}:00`;
                                                                 const isSelected = form.pickup_time.split(':')[0] === hDisplay;
                                                                 const isAvail = getIsHourAvailable(hStr);
@@ -1088,7 +1091,7 @@ export default function OrdersPage() {
                                                                         type="button"
                                                                         disabled={!isAvail}
                                                                         onClick={() => {
-                                                                            setForm(f => ({ ...f, pickup_time: withPickupHour(hDisplay, f.pickup_time) }));
+                                                                            setForm(f => ({ ...f, pickup_time: withPickupHour(hDisplay, f.pickup_time, formStore) }));
                                                                         }}
                                                                         className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail
                                                                             ? 'opacity-30 cursor-not-allowed bg-black/5 text-primary/40'
@@ -1113,7 +1116,7 @@ export default function OrdersPage() {
                                                             {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => {
                                                                 const isSelected = form.pickup_time.split(':')[1] === m;
                                                                 const hh = form.pickup_time.split(':')[0];
-                                                                const isAvail = !hh || isPickupMinuteAllowed(hh, m);
+                                                                const isAvail = !hh || isPickupMinuteAllowed(hh, m, formStore);
                                                                 return (
                                                                     <button
                                                                         key={m}

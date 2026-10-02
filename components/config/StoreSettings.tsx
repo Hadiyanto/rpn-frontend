@@ -10,7 +10,7 @@ import { Card, Field, SectionHeader, StickyActions, buttonPrimary, inputClass } 
 
 type Notify = (title: string, message: string, type: 'success' | 'error') => void;
 
-type Form = Record<'name' | 'address' | 'phone' | 'latitude' | 'longitude' | 'area_id' | 'open_time' | 'bank_name' | 'bank_account_number' | 'bank_account_name' | 'qris_image_url' | 'labor_target_boxes' | 'labor_reference_store_id', string>;
+type Form = Record<'name' | 'address' | 'phone' | 'latitude' | 'longitude' | 'area_id' | 'open_time' | 'last_pickup_time' | 'bank_name' | 'bank_account_number' | 'bank_account_name' | 'qris_image_url' | 'labor_target_boxes' | 'labor_reference_store_id', string>;
 
 const toForm = (s: Store): Form => ({
     name: s.name ?? '',
@@ -20,6 +20,7 @@ const toForm = (s: Store): Form => ({
     longitude: s.longitude == null ? '' : String(s.longitude),
     area_id: s.area_id ?? '',
     open_time: s.open_time ?? '',
+    last_pickup_time: s.last_pickup_time ?? '17:00',
     bank_name: s.bank_name ?? '',
     bank_account_number: s.bank_account_number ?? '',
     bank_account_name: s.bank_account_name ?? '',
@@ -68,6 +69,7 @@ export default function StoreSettings({ store, stores = [], onSaved, notify }: {
                     latitude: form.latitude ? Number(form.latitude) : null,
                     longitude: form.longitude ? Number(form.longitude) : null,
                     open_time: orNull(form.open_time),
+                    last_pickup_time: form.last_pickup_time || '17:00',
                     bank_name: orNull(form.bank_name),
                     bank_account_number: orNull(form.bank_account_number),
                     bank_account_name: orNull(form.bank_account_name),
@@ -95,9 +97,10 @@ export default function StoreSettings({ store, stores = [], onSaved, notify }: {
                     <Field label="Alamat">
                         <textarea id="store-address" rows={3} className={`${inputClass} h-auto py-2 resize-none`} value={form.address} onChange={set('address')} />
                     </Field>
+                    <Field label="Telepon"><input id="store-phone" className={inputClass} value={form.phone} onChange={set('phone')} /></Field>
                     <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
-                        <Field label="Telepon"><input id="store-phone" className={inputClass} value={form.phone} onChange={set('phone')} /></Field>
                         <Field label="Jam buka" hint="Jam paling awal yang bisa dipilih"><input id="store-open" type="time" className={inputClass} value={form.open_time} onChange={set('open_time')} /></Field>
+                        <Field label="Jam terakhir pickup" hint="Jam paling akhir yang bisa dipilih, juga saat kuota per jam belum diatur"><input id="store-last-pickup" type="time" className={inputClass} value={form.last_pickup_time} onChange={set('last_pickup_time')} /></Field>
                         <Field label="Latitude"><input id="store-lat" className={inputClass} value={form.latitude} onChange={set('latitude')} placeholder="-6.26" /></Field>
                         <Field label="Longitude"><input id="store-lng" className={inputClass} value={form.longitude} onChange={set('longitude')} placeholder="106.84" /></Field>
                     </div>
