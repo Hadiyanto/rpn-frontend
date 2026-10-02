@@ -32,6 +32,7 @@ import FlavorGallery, { type PickOption } from '@/components/FlavorGallery';
 import { boxPrice, flavorPrice, itemSubtotal, orderTotal, priceRangeLabel } from '@/utils/pricing';
 import { buildSelection, maxFlavorsFor, resolveVariantIds, selectedVariants } from '@/utils/flavors';
 import { normalizeVariant, toTitleCase } from '@/utils/format';
+import { isPickupMinuteAllowed, pickupHourOptions, withPickupHour } from '@/utils/pickupHours';
 
 // Leaflet map loaded client-side only
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), { ssr: false });
@@ -369,12 +370,14 @@ export default function OrderPage() {
         return () => { cancelled = true; };
     }, [form.pickup_date, selectedStore]);
 
-    // Pickup hours = the store's active hourly slots (configured in /config → Kuota).
-    const pickupHours = [...new Set(availableHours.filter(h => h.is_active).map(h => h.time_str.slice(0, 2)))].sort();
+    // No hourly slots configured = no hourly cap; see pickupHourOptions.
+    const hasHourlySlots = availableHours.length > 0;
+    const pickupHours = pickupHourOptions(availableHours, selectedStore?.open_time);
 
     const getIsHourAvailable = (hStr: string) => {
         if (!form.pickup_date || !selectedStore) return false;
         if (hStr < (selectedStore.open_time ?? '00:00')) return false;
+        if (!hasHourlySlots) return true;
         const slot = availableHours.find(h => h.time_str === hStr && h.is_active);
         if (!slot) return false;
         // Box Kecil counts as 0.5 box, like the server-side check.
@@ -729,7 +732,7 @@ export default function OrderPage() {
                                                             let isAvail = getIsHourAvailable(hDisplay + ':00');
                                                             if (deliveryMethod === 'store_delivery' && selectedShippingType === 'same_day' && hNum > 12) isAvail = false;
                                                             return (
-                                                                <button key={hDisplay} type="button" disabled={!isAvail} onClick={() => { const mm = form.pickup_time.split(':')[1] || '00'; setForm(f => ({ ...f, pickup_time: `${hDisplay}:${mm}` })); }}
+                                                                <button key={hDisplay} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: withPickupHour(hDisplay, f.pickup_time) })); }}
                                                                     className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail ? 'opacity-30 cursor-not-allowed' : isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>
                                                                     {hDisplay}
                                                                 </button>
@@ -744,7 +747,7 @@ export default function OrderPage() {
                                                             const isSelected = form.pickup_time.split(':')[1] === m;
                                                             const hDisplay = form.pickup_time.split(':')[0];
                                                             // Pick an hour first.
-                                                            let isAvail = !!hDisplay;
+                                                            let isAvail = !!hDisplay && isPickupMinuteAllowed(hDisplay, m);
                                                             if (deliveryMethod === 'store_delivery' && selectedShippingType === 'same_day' && hDisplay === '12' && m !== '00') isAvail = false;
                                                             return (
                                                                 <button key={m} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: `${hDisplay}:${m}` })); }}

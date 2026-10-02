@@ -38,6 +38,7 @@ import StoreSwitcher from '@/components/StoreSwitcher';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
+import { isPickupMinuteAllowed, pickupHourOptions, withPickupHour } from '@/utils/pickupHours';
 
 interface OrderItem {
     id?: number;
@@ -155,7 +156,7 @@ export default function OrdersPage() {
     const [printingId, setPrintingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [showSidebar, setShowSidebar] = useState(false);
-    const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+    const [stores, setStores] = useState<{ id: number; name: string; open_time?: string | null }[]>([]);
     const [storeFilter, setStoreFilter] = useState<number | null>(null);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const userRoleData = useUserRole('orders');
@@ -372,9 +373,11 @@ export default function OrdersPage() {
 
     const getIsHourAvailable = (hStr: string) => {
         if (!form.pickup_date) return false;
+        // No hourly slots configured for the store = no hourly cap (the server only checks the daily quota).
+        if (availableHours.length === 0) return true;
         const hq = availableHours.find(h => h.time_str === hStr && h.is_active);
 
-        // If no explicit hourly quota rule exists, it means that hour is CLOSED
+        // With slots configured, an hour without an active slot is CLOSED
         if (!hq) return false;
 
         let requestedBox = 0;
@@ -1073,8 +1076,8 @@ export default function OrdersPage() {
                                                             <div className="text-[10px] font-black uppercase tracking-widest text-primary/40 text-center">Jam</div>
                                                         </div>
                                                         <div className="p-1.5 space-y-0.5">
-                                                            {/* Hours = the store's active hourly slots (configured in /config → Kuota). */}
-                                                            {[...new Set(availableHours.filter(h => h.is_active).map(h => String(h.time_str).slice(0, 2)))].sort().map(hDisplay => {
+                                                            {/* Hours = the store's active hourly slots, or every opening hour when none are configured. */}
+                                                            {pickupHourOptions(availableHours, stores.find(s => s.id === Number(form.store_id))?.open_time).map(hDisplay => {
                                                                 const hStr = `${hDisplay}:00`;
                                                                 const isSelected = form.pickup_time.split(':')[0] === hDisplay;
                                                                 const isAvail = getIsHourAvailable(hStr);
@@ -1085,8 +1088,7 @@ export default function OrdersPage() {
                                                                         type="button"
                                                                         disabled={!isAvail}
                                                                         onClick={() => {
-                                                                            const mm = form.pickup_time.split(':')[1] || '00';
-                                                                            setForm(f => ({ ...f, pickup_time: `${hDisplay}:${mm}` }));
+                                                                            setForm(f => ({ ...f, pickup_time: withPickupHour(hDisplay, f.pickup_time) }));
                                                                         }}
                                                                         className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail
                                                                             ? 'opacity-30 cursor-not-allowed bg-black/5 text-primary/40'
@@ -1110,16 +1112,20 @@ export default function OrdersPage() {
                                                         <div className="p-1.5 space-y-0.5">
                                                             {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => {
                                                                 const isSelected = form.pickup_time.split(':')[1] === m;
+                                                                const hh = form.pickup_time.split(':')[0];
+                                                                const isAvail = !hh || isPickupMinuteAllowed(hh, m);
                                                                 return (
                                                                     <button
                                                                         key={m}
                                                                         type="button"
+                                                                        disabled={!isAvail}
                                                                         onClick={() => {
-                                                                            const hh = form.pickup_time.split(':')[0];
                                                                             if (!hh) return; // pick an hour first
                                                                             setForm(f => ({ ...f, pickup_time: `${hh}:${m}` }));
                                                                         }}
-                                                                        className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isSelected
+                                                                        className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail
+                                                                            ? 'opacity-30 cursor-not-allowed bg-black/5 text-primary/40'
+                                                                            : isSelected
                                                                             ? 'bg-primary text-brand-yellow scale-[1.02] shadow-md'
                                                                             : 'text-primary/70 hover:bg-primary/5 hover:text-primary'
                                                                             }`}
