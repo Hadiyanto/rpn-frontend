@@ -88,6 +88,8 @@ function StepHeader({ title, onBack }: { title: string; onBack?: () => void }) {
 export default function OrderPage() {
     const [submitting, setSubmitting] = useState(false);
     const [submittedOrder, setSubmittedOrder] = useState<any>(null);
+    // DOKU_PAYMENT=true on the backend: "Bayar Online" (DOKU checkout page) replaces QRIS.
+    const [dokuEnabled, setDokuEnabled] = useState(false);
     const [step, setStep] = useState<Step>('store');
     const [stores, setStores] = useState<any[]>([]);
     const [selectedStore, setSelectedStore] = useState<any>(null);
@@ -111,9 +113,15 @@ export default function OrderPage() {
         pickup_date: '',
         pickup_time: ':',
         note: '',
-        payment_method: '' as '' | 'TRANSFER' | 'QRIS' | 'CASH',
+        payment_method: '' as '' | 'TRANSFER' | 'QRIS' | 'CASH' | 'DOKU',
         pesanan: [emptyItem()],
     });
+
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/payment/config`)
+            .then(json => { if (json.status === 'ok') setDokuEnabled(!!json.data.doku_enabled); })
+            .catch(err => console.error('Gagal memuat konfigurasi pembayaran', err));
+    }, []);
 
     // Delivery state
     const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('pickup');
@@ -440,6 +448,11 @@ export default function OrderPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
+            if (json.status === 'ok' && json.data.payment_url) {
+                // DOKU checkout: the customer pays there and comes back to /bukti-transfer/<token>.
+                window.location.href = json.data.payment_url;
+                return;
+            }
             if (json.status === 'ok') {
                 setSubmittedOrder(json.data);
             } else {
@@ -932,8 +945,14 @@ export default function OrderPage() {
                                     {([
                                         { key: 'TRANSFER', label: 'Transfer', desc: 'Lakukan transfer dan konfirmasi pembayaran via WA' },
                                         { key: 'QRIS', label: 'QRIS', desc: 'Bayar menggunakan QRIS dan konfirmasi pembayaran via WA' },
+                                        { key: 'DOKU', label: 'QRIS', desc: 'Bayar QRIS online, status pembayaran terkonfirmasi otomatis' },
                                         { key: 'CASH', label: 'Tunai', desc: 'Bayar tunai saat pengambilan' },
-                                    ] as const).filter(({ key }) => key !== 'QRIS' || !!selectedStore?.qris_image_url).map(({ key, label, desc }) => {
+                                    ] as const).filter(({ key }) =>
+                                        // DOKU takes QRIS's place while DOKU_PAYMENT is on.
+                                        key === 'QRIS' ? !dokuEnabled && !!selectedStore?.qris_image_url
+                                            : key === 'DOKU' ? dokuEnabled
+                                                : true
+                                    ).map(({ key, label, desc }) => {
                                         const isSelected = form.payment_method === key;
                                         return (
                                             <button key={key} onClick={() => setForm(f => ({ ...f, payment_method: key }))}
@@ -1012,7 +1031,7 @@ export default function OrderPage() {
                     )}
                     {step === 'payment' && (
                         <button onClick={submitOrder} disabled={submitting} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all disabled:opacity-50 py-3.5">
-                            {submitting ? 'Memproses...' : 'Buat Pesanan'}
+                            {submitting ? 'Memproses...' : form.payment_method === 'DOKU' ? 'Buat Pesanan & Bayar' : 'Buat Pesanan'}
                         </button>
                     )}
                 </div>

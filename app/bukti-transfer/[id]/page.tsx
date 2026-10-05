@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from 'react';
 import { itemSubtotal, orderTotal } from '@/utils/pricing';
-import { LuUpload, LuCheck, LuArrowLeft, LuPackage, LuReceipt } from 'react-icons/lu';
+import { LuUpload, LuCheck, LuArrowLeft, LuPackage, LuReceipt, LuCreditCard } from 'react-icons/lu';
 import { useRouter } from 'next/navigation';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
@@ -22,6 +22,10 @@ interface Order {
     pickup_date: string;
     store_id: number | null;
     items: OrderItem[];
+    status?: string;
+    payment_method?: string | null;
+    /** DOKU checkout link while the order can still be paid online (public endpoint only). */
+    payment_url?: string | null;
 }
 
 interface StoreBank {
@@ -49,8 +53,16 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
         let cancelled = false;
         const fetchData = async () => {
             try {
-                const orderRes = await fetchJson(`${API_URL}${orderPath}`);
+                let orderRes = await fetchJson(`${API_URL}${orderPath}`);
                 if (cancelled) return;
+
+                // Back from the DOKU checkout page: ask the backend to check the payment with DOKU,
+                // in case its notification hasn't been processed yet.
+                if (orderRes.status === 'ok' && orderRes.data.payment_method === 'DOKU' && orderRes.data.status === 'UNPAID' && isPublicToken(id)) {
+                    const synced = await fetchJson(`${API_URL}/api/order/public/${id}/doku-sync`, { method: 'POST' }).catch(() => null);
+                    if (cancelled) return;
+                    if (synced?.status === 'ok') orderRes = synced;
+                }
 
                 if (orderRes.status === 'ok') setOrder(orderRes.data);
 
@@ -141,7 +153,7 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
             <div className="w-full max-w-md">
                 {/* Title */}
                 <div className="flex flex-col mb-4">
-                    <h1 className="text-xl font-extrabold">Upload Bukti</h1>
+                    <h1 className="text-xl font-extrabold">{order?.payment_method === 'DOKU' ? 'Status Pembayaran' : 'Upload Bukti'}</h1>
                     <p className="text-sm font-semibold text-primary/60">Order ID: #{id}</p>
                     {order && <p className="text-sm font-bold text-primary mt-1">{order.customer_name}</p>}
                 </div>
@@ -183,6 +195,11 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                             <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold text-center">Data pesanan tidak ditemukan.</div>
                         )}
 
+                        {order?.payment_method === 'DOKU' && (
+                            <DokuPaymentStatus order={order} />
+                        )}
+
+                        {order?.payment_method !== 'DOKU' && <>
                         {store?.qris_image_url && (
                             <div className="bg-primary/5 rounded-2xl border border-primary/10 p-4">
                                 <p className="text-[10px] font-black uppercase text-primary/60 mb-3 text-center tracking-wider">
@@ -228,9 +245,47 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                             </label>
                             <p className="text-[10px] text-center font-bold text-primary/40 mt-3 uppercase tracking-wider">Maksimal ukuran file 5MB</p>
                         </div>
+                        </>}
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+
+/** Payment state of an order paid through the DOKU checkout page. */
+function DokuPaymentStatus({ order }: { order: Order }) {
+    if (order.status === 'UNPAID') {
+        return order.payment_url ? (
+            <div className="bg-primary/5 rounded-2xl border border-primary/10 p-4 text-center space-y-3">
+                <p className="text-sm font-bold text-primary">Pesanan menunggu pembayaran</p>
+                <p className="text-xs text-primary/60">Status akan diperbarui otomatis setelah pembayaran berhasil.</p>
+                <a
+                    href={order.payment_url}
+                    className="w-full h-12 flex items-center justify-center gap-2 bg-primary text-brand-yellow font-extrabold text-sm rounded-2xl shadow-lg active:scale-[0.98] transition-transform"
+                >
+                    <LuCreditCard className="text-lg" />
+                    Bayar Sekarang
+                </a>
+            </div>
+        ) : (
+            <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm font-bold text-center">
+                Batas waktu pembayaran sudah habis. Silakan hubungi kami via WhatsApp atau buat pesanan baru.
+            </div>
+        );
+    }
+    if (order.status === 'CANCELLED') {
+        return (
+            <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm font-bold text-center">
+                Pesanan dibatalkan.
+            </div>
+        );
+    }
+    return (
+        <div className="bg-green-50 text-green-700 p-4 rounded-2xl text-center space-y-1">
+            <LuCheck className="text-3xl mx-auto" />
+            <p className="text-sm font-extrabold">Pembayaran berhasil</p>
+            <p className="text-xs font-medium">Terima kasih! Konfirmasi pesanan dikirim via WhatsApp.</p>
         </div>
     );
 }

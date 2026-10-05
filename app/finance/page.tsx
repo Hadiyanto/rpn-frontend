@@ -34,7 +34,7 @@ interface Order {
     pickup_time: string | null;
     note: string | null;
     status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE';
-    payment_method: 'TRANSFER' | 'QRIS' | 'CASH' | null;
+    payment_method: 'TRANSFER' | 'QRIS' | 'CASH' | 'DOKU' | null;
     created_at: string;
     items: OrderItem[];
     store_id: number | null;
@@ -54,6 +54,7 @@ const PAYMENT_STYLES: Record<string, string> = {
     TRANSFER: 'bg-blue-100 text-blue-600',
     QRIS: 'bg-violet-100 text-violet-600',
     CASH: 'bg-emerald-100 text-emerald-600',
+    DOKU: 'bg-amber-100 text-amber-700',
 };
 
 export default function FinancePage() {
@@ -62,7 +63,7 @@ export default function FinancePage() {
     const [showSidebar, setShowSidebar] = useState(false);
     const userRoleData = useUserRole('finance');
     const [activeDate, setActiveDate] = useState<string | 'ALL'>('ALL');
-    const [activePayment, setActivePayment] = useState<'ALL' | 'TRANSFER' | 'QRIS' | 'CASH'>('ALL');
+    const [activePayment, setActivePayment] = useState<'ALL' | 'TRANSFER' | 'QRIS' | 'CASH' | 'DOKU'>('ALL');
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [showAllOrders, setShowAllOrders] = useState(false);
     const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
@@ -156,9 +157,9 @@ export default function FinancePage() {
 
                     {/* Payment method filter chips */}
                     <ChipRow label="Metode bayar">
-                        {(['ALL', 'TRANSFER', 'QRIS', 'CASH'] as const).map(pm => (
+                        {(['ALL', 'TRANSFER', 'QRIS', 'CASH', 'DOKU'] as const).map(pm => (
                             <button key={pm} onClick={() => setActivePayment(pm)} className={chipClass(activePayment === pm)}>
-                                {pm === 'ALL' ? 'Semua' : pm === 'TRANSFER' ? 'Transfer' : pm === 'QRIS' ? 'QRIS' : 'Cash'}
+                                {pm === 'ALL' ? 'Semua' : pm === 'TRANSFER' ? 'Transfer' : pm === 'QRIS' ? 'QRIS' : pm === 'DOKU' ? 'DOKU' : 'Cash'}
                             </button>
                         ))}
                     </ChipRow>

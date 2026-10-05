@@ -59,7 +59,7 @@ interface Order {
     pickup_time: string;
     note: string | null;
     status: 'UNPAID' | 'PAID' | 'CONFIRMED' | 'DONE';
-    payment_method: 'TRANSFER' | 'QRIS' | 'CASH' | null;
+    payment_method: 'TRANSFER' | 'QRIS' | 'CASH' | 'DOKU' | null;
     transfer_img_url: string | null;
     created_at: string;
     items: OrderItem[];
@@ -91,12 +91,14 @@ const PAYMENT_STYLES: Record<string, string> = {
     TRANSFER: 'bg-blue-100 text-blue-600',
     QRIS: 'bg-violet-100 text-violet-600',
     CASH: 'bg-emerald-100 text-emerald-600',
+    DOKU: 'bg-amber-100 text-amber-700',
 };
 
 const PAYMENT_LABEL: Record<string, string> = {
     TRANSFER: 'Transfer',
     QRIS: 'QRIS',
     CASH: 'Cash',
+    DOKU: 'DOKU',
 };
 
 
@@ -159,6 +161,13 @@ export default function OrdersPage() {
     const [stores, setStores] = useState<{ id: number; name: string; open_time?: string | null; last_pickup_time?: string | null }[]>([]);
     const [storeFilter, setStoreFilter] = useState<number | null>(null);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    // DOKU_PAYMENT=true on the backend: DOKU (online checkout) takes QRIS's place as a payment method.
+    const [dokuEnabled, setDokuEnabled] = useState(false);
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/payment/config`)
+            .then(json => { if (json.status === 'ok') setDokuEnabled(!!json.data.doku_enabled); })
+            .catch(err => console.error('Gagal memuat konfigurasi pembayaran', err));
+    }, []);
     const userRoleData = useUserRole('orders');
     const [seenOrderCount, setSeenOrderCount] = useState<number>(() => {
         if (typeof window === 'undefined') return 0;
@@ -329,7 +338,7 @@ export default function OrdersPage() {
         pickup_date: getTodayStr(),
         pickup_time: ':',
         note: '',
-        payment_method: '' as '' | 'TRANSFER' | 'QRIS' | 'CASH',
+        payment_method: '' as '' | 'TRANSFER' | 'QRIS' | 'CASH' | 'DOKU',
         // Quota, opening hours and the order itself are per store.
         store_id: null as number | null,
         pesanan: [emptyItem()]
@@ -467,6 +476,9 @@ export default function OrdersPage() {
                     }),
                 });
                 if (json.status === 'ok') {
+                    if (json.data.payment_url) {
+                        alert(`Link pembayaran DOKU (juga dikirim ke WhatsApp customer):\n${json.data.payment_url}`);
+                    }
                     // Refresh orders
                     const json2 = await fetchJson(`${API_URL}/api/orders`);
                     if (json2.status === 'ok') setOrders(json2.data);
@@ -756,7 +768,9 @@ export default function OrdersPage() {
                                                 >
                                                     <option value="">--</option>
                                                     <option value="TRANSFER">Transfer</option>
-                                                    <option value="QRIS">QRIS</option>
+                                                    {/* DOKU replaces QRIS while DOKU_PAYMENT is on; an order's current method always stays listed. */}
+                                                    {(!dokuEnabled || order.payment_method === 'QRIS') && <option value="QRIS">QRIS</option>}
+                                                    {(dokuEnabled || order.payment_method === 'DOKU') && <option value="DOKU">DOKU</option>}
                                                     <option value="CASH">Cash</option>
                                                 </select>
                                                 <LuChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" />
@@ -909,7 +923,7 @@ export default function OrdersPage() {
                                                             pickup_date: order.pickup_date,
                                                             pickup_time: order.pickup_time?.slice(0, 5) || ':',
                                                             note: order.note || '',
-                                                            payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'QRIS' | 'CASH',
+                                                            payment_method: (order.payment_method ?? '') as '' | 'TRANSFER' | 'QRIS' | 'CASH' | 'DOKU',
                                                             store_id: order.store_id,
                                                             pesanan: order.items.map(i => ({ box_type: i.box_type as BoxType, name: i.name, qty: i.qty, variant_ids: i.variant_ids })),
                                                         });
@@ -1274,7 +1288,8 @@ export default function OrdersPage() {
                                         >
                                             <option value="">Pilih metode pembayaran...</option>
                                             <option value="TRANSFER">Transfer</option>
-                                            <option value="QRIS">QRIS</option>
+                                            {(!dokuEnabled || form.payment_method === 'QRIS') && <option value="QRIS">QRIS</option>}
+                                            {(dokuEnabled || form.payment_method === 'DOKU') && <option value="DOKU">QRIS (DOKU)</option>}
                                             <option value="CASH">Cash</option>
                                         </select>
                                         <LuChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
