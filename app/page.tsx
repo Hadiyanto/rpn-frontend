@@ -28,6 +28,7 @@ import { API_URL } from '@/utils/config';
 import type { BoxType, Menu, Variant } from '@/types/menu';
 import { BOX_TYPES, boxLabel, boxLabelID } from '@/utils/box';
 import FlavorPicker from '@/components/FlavorPicker';
+import AddressSearch from '@/components/AddressSearch';
 import FlavorGallery, { type PickOption } from '@/components/FlavorGallery';
 import { boxPrice, flavorPrice, itemSubtotal, orderTotal, priceRangeLabel } from '@/utils/pricing';
 import { buildSelection, maxFlavorsFor, resolveVariantIds, selectedVariants } from '@/utils/flavors';
@@ -46,7 +47,22 @@ interface OrderItem {
 }
 
 type DeliveryMethod = 'pickup' | 'customer_delivery' | 'store_delivery';
-type Step = 'store' | 'info' | 'menu' | 'review' | 'payment';
+// Flow: store → menu → customer details (incl. delivery) → review → payment.
+type Step = 'store' | 'menu' | 'info' | 'review' | 'payment';
+const PREV_STEP: Partial<Record<Step, Step>> = { menu: 'store', info: 'menu', review: 'info', payment: 'review' };
+
+/** A courier the customer can pick for Store Delivery (POST /api/biteship/store-delivery-options). */
+interface DeliveryOption {
+    courier_company: string;
+    courier_type: string;
+    courier_name: string;
+    service_name: string;
+    duration: string | null;
+    price: number;
+    shipping_fee: number;
+    shipping_fee_discount: number;
+    shipping_fee_surcharge: number;
+}
 
 const STEP_TITLES: Record<Step, string> = {
     store: 'Pilih Store',
@@ -69,7 +85,8 @@ function formatSchedule(dateStr: string, timeStr: string) {
 const DELIVERY_OPTIONS: { key: DeliveryMethod; label: string; desc: string; icon: any; hidden?: boolean }[] = [
     { key: 'pickup', label: 'Ambil di Toko', desc: 'Pesanan diambil langsung di toko', icon: LuStore },
     { key: 'customer_delivery', label: 'Kirim dengan Kurir', desc: 'Kurir dipesan oleh pelanggan', icon: LuTruck },
-    { key: 'store_delivery', label: 'Store Delivery', desc: 'Toko yang mengirim ke customer', icon: LuMapPin, hidden: true },
+    // Shown only when BITESHIP_ENABLED=true and the customer's number passes BITESHIP_WHITELIST (storeDeliveryAllowed).
+    { key: 'store_delivery', label: 'Store Delivery', desc: 'Toko yang mengirim ke customer', icon: LuMapPin },
 ];
 
 function StepHeader({ title, onBack }: { title: string; onBack?: () => void }) {
@@ -90,6 +107,12 @@ export default function OrderPage() {
     const [submittedOrder, setSubmittedOrder] = useState<any>(null);
     // DOKU_PAYMENT=true on the backend: "Bayar Online" (DOKU checkout page) replaces QRIS.
     const [dokuEnabled, setDokuEnabled] = useState(false);
+    // TRANSFER_PAYMENT=false on the backend hides bank transfer.
+    const [transferEnabled, setTransferEnabled] = useState(true);
+    // BITESHIP_ENABLED=true on the backend; whether this customer gets Store Delivery is checked by
+    // phone number against BITESHIP_WHITELIST (server-side).
+    const [biteshipEnabled, setBiteshipEnabled] = useState(false);
+    const [storeDeliveryAllowed, setStoreDeliveryAllowed] = useState(false);
     const [step, setStep] = useState<Step>('store');
     const [stores, setStores] = useState<any[]>([]);
     const [selectedStore, setSelectedStore] = useState<any>(null);
@@ -97,10 +120,18 @@ export default function OrderPage() {
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-    const [shippingFee, setShippingFee] = useState<number | null>(null);
-    const [shippingLoading, setShippingLoading] = useState(false);
-    const [availableRates, setAvailableRates] = useState<any[]>([]);
-    const [selectedShippingType, setSelectedShippingType] = useState<'instant' | 'same_day'>('instant');
+    // Store Delivery: confirm address + pin → courier options from Biteship → customer picks one.
+    const [locationConfirmed, setLocationConfirmed] = useState(false);
+    const [courierOptions, setCourierOptions] = useState<DeliveryOption[] | null>(null);
+    const [courierLoading, setCourierLoading] = useState(false);
+    const [courierError, setCourierError] = useState('');
+    const [selectedCourier, setSelectedCourier] = useState<DeliveryOption | null>(null);
+    const resetDeliveryQuote = () => {
+        setLocationConfirmed(false);
+        setCourierOptions(null);
+        setCourierError('');
+        setSelectedCourier(null);
+    };
 
     const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
         setToast({ title, body, type });
@@ -119,7 +150,12 @@ export default function OrderPage() {
 
     useEffect(() => {
         fetchJson(`${API_URL}/api/payment/config`)
-            .then(json => { if (json.status === 'ok') setDokuEnabled(!!json.data.doku_enabled); })
+            .then(json => {
+                if (json.status !== 'ok') return;
+                setDokuEnabled(!!json.data.doku_enabled);
+                setTransferEnabled(json.data.transfer_enabled !== false);
+                setBiteshipEnabled(!!json.data.biteship_enabled);
+            })
             .catch(err => console.error('Gagal memuat konfigurasi pembayaran', err));
     }, []);
 
@@ -133,6 +169,32 @@ export default function OrderPage() {
     const [areaResults, setAreaResults] = useState<any[]>([]);
     const [selectedArea, setSelectedArea] = useState<any>(null);
     const [areaLoading, setAreaLoading] = useState(false);
+
+    const shippingFee = deliveryMethod === 'store_delivery' ? selectedCourier?.price ?? null : null;
+
+    // Store Delivery is offered only to whitelisted numbers; re-checked as the number is typed.
+    useEffect(() => {
+        const phone = form.customer_phone;
+        if (!biteshipEnabled || phone.length < 9) {
+            setStoreDeliveryAllowed(false);
+            return;
+        }
+        let cancelled = false;
+        const timeoutId = setTimeout(() => {
+            fetchJson(`${API_URL}/api/biteship/eligibility`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customer_phone: phone }),
+            })
+                .then(json => { if (!cancelled) setStoreDeliveryAllowed(json.status === 'ok' && !!json.data.store_delivery); })
+                .catch(() => { if (!cancelled) setStoreDeliveryAllowed(false); });
+        }, 400);
+        return () => { cancelled = true; clearTimeout(timeoutId); };
+    }, [biteshipEnabled, form.customer_phone]);
+
+    useEffect(() => {
+        if (!storeDeliveryAllowed && deliveryMethod === 'store_delivery') setDeliveryMethod('pickup');
+    }, [storeDeliveryAllowed, deliveryMethod]);
 
     const [menus, setMenus] = useState<Menu[]>([]);
     const [variants, setVariants] = useState<Variant[]>([]);
@@ -178,6 +240,11 @@ export default function OrderPage() {
     const onMapClick = useCallback(async (lat: number, lng: number) => {
         setDestLat(lat);
         setDestLng(lng);
+        // A new pin needs a new confirmation + courier check.
+        setLocationConfirmed(false);
+        setCourierOptions(null);
+        setCourierError('');
+        setSelectedCourier(null);
         setSelectedArea(null);
         setAreaResults([]);
         try {
@@ -269,87 +336,63 @@ export default function OrderPage() {
         return [{ ...addAsNewItem, label: `Tambah sebagai Item ${idx + 2}` }];
     };
 
-    // Boxes to ship; the backend turns them into Biteship items (size/weight per box, value = average box price).
-    const getShippingBoxes = useCallback(() => {
-        const byBox = new Map<string, { qty: number; value: number }>();
-        for (const p of form.pesanan) {
-            if (!p.name) continue;
-            const cur = byBox.get(p.box_type) ?? { qty: 0, value: 0 };
-            const qty = p.qty || 1;
-            byBox.set(p.box_type, { qty: cur.qty + qty, value: cur.value + priceOfItem(p) * qty });
-        }
-        return [...byBox.entries()].map(([box_type, b]) => ({ box_type, qty: b.qty, value: Math.round(b.value / b.qty) }));
-    }, [form.pesanan, priceOfItem]);
+    // Items as POST /order receives them; also what the delivery quote is computed from.
+    const orderItemsPayload = useCallback(() => form.pesanan
+        .filter(p => p.name.trim().length > 0 && p.qty > 0)
+        .map(({ isExpanded: _isExpanded, ...item }) => ({ ...item, name: normalizeVariant(item.name), variant_ids: resolveVariantIds(item, variants) })),
+    [form.pesanan, variants]);
 
-    // Auto-fetch shipping rates when conditions are met
+    // A place picked from the address search: pin + address from Google, like a map tap.
+    const onSearchSelect = ({ lat, lng, address }: { lat: number; lng: number; address: string }) => {
+        setDestLat(lat);
+        setDestLng(lng);
+        setDeliveryAddress(address);
+        setSelectedArea(null);
+        setAreaResults([]);
+        resetDeliveryQuote();
+    };
+
+    // Changed items (back to the menu) change the fees — the courier must be checked again.
+    const itemsKey = JSON.stringify(orderItemsPayload());
     useEffect(() => {
-        if (deliveryMethod !== 'store_delivery') {
-            setShippingFee(null);
-            return;
-        }
+        setLocationConfirmed(false);
+        setCourierOptions(null);
+        setCourierError('');
+        setSelectedCourier(null);
+    }, [itemsKey]);
 
-        const boxes = getShippingBoxes();
-        if (!destLat || !destLng || boxes.length === 0) {
-            setShippingFee(null);
-            return;
-        }
-
-        const fetchRates = async () => {
-            setShippingLoading(true);
-            try {
-                const payload = {
+    /** "Konfirmasi alamat & titik lokasi": only then ask Biteship for the courier fees. */
+    const confirmLocation = async () => {
+        if (!destLat || !destLng) return fail('Silakan tandai lokasi di peta');
+        if (!deliveryAddress.trim()) return fail('Alamat pengiriman wajib diisi');
+        setErrorMessage('');
+        setLocationConfirmed(true);
+        setSelectedCourier(null);
+        setCourierOptions(null);
+        setCourierError('');
+        setCourierLoading(true);
+        try {
+            const json = await fetchJson(`${API_URL}/api/biteship/store-delivery-options`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     store_id: selectedStore?.id,
-                    destination_latitude: destLat,
-                    destination_longitude: destLng,
-                    boxes, // couriers default on the backend
-                };
-
-                const json = await fetchJson(`${API_URL}/api/biteship/rates`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-
-                if (json.status === 'ok' && Array.isArray(json.data)) {
-                    setAvailableRates(json.data);
-                } else {
-                    setAvailableRates([]);
-                    console.error('Biteship rates error:', json);
-                }
-            } catch (err) {
-                console.error('Failed to fetch shipping rates:', err);
-                setAvailableRates([]);
-            } finally {
-                setShippingLoading(false);
-            }
-        };
-
-        const timeoutId = setTimeout(() => fetchRates(), 800);
-        return () => clearTimeout(timeoutId);
-    }, [deliveryMethod, destLat, destLng, getShippingBoxes]);
-
-    // Update shipping fee dynamically whenever selectedShippingType or availableRates change
-    useEffect(() => {
-        if (!availableRates.length) {
-            setShippingFee(null);
-            return;
+                    pesanan: orderItemsPayload(),
+                    customer_phone: form.customer_phone,
+                    delivery_lat: destLat,
+                    delivery_lng: destLng,
+                }),
+            });
+            const options: DeliveryOption[] = json.status === 'ok' ? json.data : [];
+            setCourierOptions(options);
+            if (options.length === 0) setCourierError('Belum ada kurir yang tersedia ke lokasi ini. Coba geser titik lokasi atau pilih metode lain.');
+        } catch (err) {
+            setLocationConfirmed(false);
+            setCourierError(err instanceof Error ? err.message : 'Gagal mengecek ongkir. Silakan coba lagi.');
+        } finally {
+            setCourierLoading(false);
         }
-
-        const validRates = availableRates.filter(r => {
-            const svc = (r.courier_service_code || '').toLowerCase().replace(/_/g, '');
-            if (selectedShippingType === 'instant') return svc.includes('instant');
-            if (selectedShippingType === 'same_day') return svc.includes('sameday') || svc.includes('same');
-            return false;
-        });
-
-        if (validRates.length > 0) {
-            // Find lowest price
-            const cheapest = validRates.sort((a, b) => a.price - b.price)[0];
-            setShippingFee(cheapest.price);
-        } else {
-            setShippingFee(null);
-        }
-    }, [availableRates, selectedShippingType]);
+    };
 
     const filterPassedDates = (time: Date) => {
         // Disable past dates automatically
@@ -406,26 +449,27 @@ export default function OrderPage() {
         if (deliveryMethod === 'store_delivery') {
             if (!deliveryAddress.trim()) return fail('Alamat pengiriman wajib diisi');
             if (!destLat || !destLng) return fail('Silakan tandai lokasi di peta');
+            if (!locationConfirmed) return fail('Konfirmasi alamat & titik lokasi terlebih dahulu');
+            if (!selectedCourier) return fail('Silakan pilih kurir pengiriman');
         }
-        goToStep('menu');
+        goToStep('review');
     };
 
     const handleNextFromMenu = () => {
         setErrorMessage('');
         const validItems = form.pesanan.filter(p => p.name.trim().length > 0 && p.qty > 0);
         if (validItems.length === 0) return fail('Minimal 1 pesanan wajib diisi');
-        goToStep('review');
+        goToStep('info');
     };
 
     const submitOrder = async () => {
         setErrorMessage('');
         if (!selectedStore) return fail('Store belum dipilih');
         if (!form.payment_method) return fail('Metode pembayaran wajib dipilih');
+        if (deliveryMethod === 'store_delivery' && !selectedCourier) return fail('Silakan pilih kurir pengiriman');
         setSubmitting(true);
         try {
-            const validItems = form.pesanan
-                .filter(p => p.name.trim().length > 0 && p.qty > 0)
-                .map(({ isExpanded: _isExpanded, ...item }) => ({ ...item, name: normalizeVariant(item.name), variant_ids: resolveVariantIds(item, variants) }));
+            const validItems = orderItemsPayload();
 
             // Build note — plain now, delivery stored in separate columns
             const noteStr = form.note.trim() || null;
@@ -440,7 +484,9 @@ export default function OrderPage() {
                 delivery_lng: destLng,
                 delivery_address: deliveryAddress.trim() || null,
                 delivery_driver_note: driverNote.trim() || null,
-                delivery_type_preference: selectedShippingType, // Add preference so the backend/admins know what they requested
+                // The backend re-quotes this courier and charges its current fee.
+                delivery_courier_company: deliveryMethod === 'store_delivery' ? selectedCourier?.courier_company : null,
+                delivery_courier_type: deliveryMethod === 'store_delivery' ? selectedCourier?.courier_type : null,
             };
 
             const json = await fetchJson(`${API_URL}/api/order`, {
@@ -467,11 +513,12 @@ export default function OrderPage() {
 
     const resetForm = () => {
         setSubmittedOrder(null);
-        setStep('info');
+        setStep(selectedStore ? 'menu' : 'store');
         setForm({ customer_name: '', customer_phone: '', pickup_date: '', pickup_time: ':', note: '', payment_method: '', pesanan: [emptyItem()] });
         setDeliveryMethod('pickup');
         setDestLat(null); setDestLng(null); setDeliveryAddress(''); setDriverNote('');
         setPostalCode(null); setAreaResults([]); setSelectedArea(null);
+        resetDeliveryQuote();
     };
 
     const itemsTotal = form.pesanan.reduce((sum, item) => sum + priceOfItem(item) * item.qty, 0);
@@ -506,9 +553,15 @@ export default function OrderPage() {
                                 </div>
                             ))}
                         </div>
+                        {Number(submittedOrder.delivery_fee) > 0 && (
+                            <div className="flex justify-between text-xs py-1">
+                                <span className="text-primary/70">Ongkir</span>
+                                <span className="font-bold text-primary">Rp {Number(submittedOrder.delivery_fee).toLocaleString('id-ID')}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between pt-2 border-t border-primary/10">
                             <span className="font-black text-primary">Total</span>
-                            <span className="font-black text-primary">Rp {orderTotal({ items: submittedOrder.items ?? [] }).toLocaleString('id-ID')}</span>
+                            <span className="font-black text-primary">Rp {(orderTotal({ items: submittedOrder.items ?? [] }) + Number(submittedOrder.delivery_fee ?? 0)).toLocaleString('id-ID')}</span>
                         </div>
                     </div>
                     {submittedOrder.payment_method === 'TRANSFER' && (
@@ -565,7 +618,7 @@ export default function OrderPage() {
 
                 <StepHeader
                     title={STEP_TITLES[step]}
-                    onBack={step === 'info' ? () => goToStep('store') : step === 'menu' ? () => goToStep('info') : step === 'review' ? () => goToStep('menu') : step === 'payment' ? () => goToStep('review') : undefined}
+                    onBack={PREV_STEP[step] ? () => goToStep(PREV_STEP[step]!) : undefined}
                 />
 
                 <div className="flex-1 px-5 py-6 space-y-6">
@@ -625,7 +678,7 @@ export default function OrderPage() {
                             <div className="space-y-3">
                                 <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">METODE PENGAMBILAN *</label>
                                 <div className="space-y-2">
-                                    {DELIVERY_OPTIONS.filter(d => !d.hidden).map(({ key, label, desc, icon: Icon }) => {
+                                    {DELIVERY_OPTIONS.filter(d => d.key === 'store_delivery' ? storeDeliveryAllowed : !d.hidden).map(({ key, label, desc, icon: Icon }) => {
                                         const isSelected = deliveryMethod === key;
                                         return (
                                             <button key={key} onClick={() => setDeliveryMethod(key)}
@@ -646,6 +699,7 @@ export default function OrderPage() {
                                 {/* Store Delivery — Map & Address Section */}
                                 {deliveryMethod === 'store_delivery' && (
                                     <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <AddressSearch biasLat={selectedStore?.latitude} biasLng={selectedStore?.longitude} onSelect={onSearchSelect} />
                                         <div className="rounded-2xl overflow-hidden border border-primary/10 shadow-md" style={{ height: 260 }}>
                                             <LeafletMap originLat={selectedStore?.latitude} originLng={selectedStore?.longitude} destLat={destLat} destLng={destLng} onMapClick={onMapClick} />
                                         </div>
@@ -663,14 +717,14 @@ export default function OrderPage() {
                                         {!destLat && (
                                             <p className="text-xs text-primary/50 font-medium text-center py-2">
                                                 <LuMapPin className="inline mr-1" size={12} />
-                                                Tap peta untuk menentukan lokasi pengiriman
+                                                Cari alamat di atas, atau tap peta untuk menentukan lokasi pengiriman
                                             </p>
                                         )}
 
                                         {/* Delivery Address — auto-filled from pin */}
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black uppercase text-primary/60">Alamat Lengkap Pengiriman *</label>
-                                            <textarea rows={3} value={deliveryAddress} onChange={e => setDeliveryAddress(e.target.value)}
+                                            <textarea rows={3} value={deliveryAddress} onChange={e => { setDeliveryAddress(e.target.value); resetDeliveryQuote(); }}
                                                 placeholder="Tap peta untuk mengisi otomatis, atau ketik manual..."
                                                 className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" />
                                         </div>
@@ -683,34 +737,55 @@ export default function OrderPage() {
                                                 className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" />
                                         </div>
 
-                                        {/* Pilihan Layanan Pengiriman */}
-                                        <div className="space-y-1.5 pt-2">
-                                            <label className="text-[10px] font-black uppercase text-primary/60">Layanan Pengiriman</label>
-                                            <div className="flex gap-2 p-1 bg-white rounded-2xl border border-primary/10 shadow-sm">
-                                                {(['instant', 'same_day'] as const).map(type => (
-                                                    <button key={type} onClick={() => {
-                                                        setSelectedShippingType(type);
-                                                        // Reset time if it's invalid for same_day
-                                                        if (type === 'same_day') {
-                                                            const [hh, mm] = form.pickup_time.split(':');
-                                                            if (parseInt(hh) > 12 || (parseInt(hh) === 12 && parseInt(mm) > 0)) {
-                                                                setForm(f => ({ ...f, pickup_time: '12:00' }));
-                                                            }
-                                                        }
-                                                    }}
-                                                        className={`flex-1 flex flex-col items-center justify-center py-2 px-1 text-center rounded-xl transition-all ${selectedShippingType === type ? 'bg-primary text-brand-yellow shadow-md border border-primary text-opacity-100' : 'text-primary/50 hover:bg-primary/5 border border-transparent'}`}>
-                                                        <span className="text-xs font-black">{type === 'instant' ? 'Instant' : 'Same Day'}</span>
-                                                        <span className="text-[10px] font-medium opacity-80">{type === 'instant' ? '±3 Jam' : '±8 Jam (Lebih Murah)'}</span>
-                                                    </button>
-                                                ))}
+                                        {/* Konfirmasi lokasi → cek ongkir → pilih kurir */}
+                                        {!locationConfirmed ? (
+                                            <div className="pt-1 space-y-2">
+                                                <button type="button" onClick={confirmLocation} disabled={!destLat || !deliveryAddress.trim() || courierLoading}
+                                                    className="w-full py-3 rounded-2xl bg-primary text-brand-yellow text-sm font-extrabold shadow-md disabled:opacity-40 flex items-center justify-center gap-2 active:scale-[0.98] transition-all">
+                                                    <LuMapPin /> Konfirmasi Alamat & Titik Lokasi
+                                                </button>
+                                                {courierError && <p className="text-xs text-red-600 font-semibold text-center">{courierError}</p>}
                                             </div>
-                                            {selectedShippingType === 'same_day' && (
-                                                <div className="mt-2 p-2 bg-brand-yellow/20 border border-brand-yellow rounded-xl flex items-start gap-2 animate-in fade-in zoom-in-95">
-                                                    <LuInfo className="text-primary mt-0.5 shrink-0" size={14} />
-                                                    <p className="text-[10px] font-bold text-primary leading-tight">Pengiriman Same Day maksimal pickup jam <strong>12:00</strong>. Waktu Pengambilan otomatis disesuaikan.</p>
+                                        ) : (
+                                            <div className="space-y-2 pt-1">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[10px] font-black uppercase text-primary/60">Pilih Kurir *</label>
+                                                    <button type="button" onClick={resetDeliveryQuote} className="text-[10px] font-bold text-primary underline">Ubah lokasi</button>
                                                 </div>
-                                            )}
-                                        </div>
+                                                {courierLoading && (
+                                                    <p className="text-xs text-primary/60 font-medium text-center py-3 flex items-center justify-center gap-2">
+                                                        <LuRefreshCw className="animate-spin" size={12} /> Mengecek ongkir...
+                                                    </p>
+                                                )}
+                                                {courierError && <p className="text-xs text-red-600 font-semibold">{courierError}</p>}
+                                                {courierOptions?.map(o => {
+                                                    const isSelected = selectedCourier?.courier_company === o.courier_company && selectedCourier?.courier_type === o.courier_type;
+                                                    const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`;
+                                                    return (
+                                                        <button key={`${o.courier_company}-${o.courier_type}`} type="button" onClick={() => setSelectedCourier(o)}
+                                                            className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all ${isSelected ? 'border-primary bg-primary text-brand-yellow' : 'border-primary/10 bg-primary/5 text-primary hover:border-primary/30'}`}>
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="min-w-0">
+                                                                    <p className="text-sm font-extrabold">{o.courier_name} · {o.service_name}</p>
+                                                                    <p className={`text-xs font-medium ${isSelected ? 'text-brand-yellow/70' : 'text-primary/50'}`}>Estimasi {o.duration ?? '-'}</p>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 shrink-0">
+                                                                    <p className="text-sm font-black">{rp(o.price)}</p>
+                                                                    {isSelected && <LuCheck />}
+                                                                </div>
+                                                            </div>
+                                                            <div className={`mt-2 pt-2 border-t space-y-0.5 text-[11px] font-medium ${isSelected ? 'border-brand-yellow/20 text-brand-yellow/80' : 'border-primary/10 text-primary/60'}`}>
+                                                                <div className="flex justify-between"><span>Ongkos kirim</span><span>{rp(o.shipping_fee)}</span></div>
+                                                                {o.shipping_fee_discount > 0 && <div className="flex justify-between"><span>Diskon</span><span>- {rp(o.shipping_fee_discount)}</span></div>}
+                                                                {o.shipping_fee_surcharge > 0 && <div className="flex justify-between"><span>Biaya tambahan</span><span>{rp(o.shipping_fee_surcharge)}</span></div>}
+                                                                <div className="flex justify-between font-bold"><span>Total ongkir</span><span>{rp(o.price)}</span></div>
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                                <p className="text-[10px] text-primary/40 font-medium text-center">Kurir dipesan saat pesanan siap dikirim.</p>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -740,10 +815,8 @@ export default function OrderPage() {
                                                     <div className="p-1.5 space-y-0.5">
                                                         {pickupHours.length === 0 && <p className="text-[11px] text-primary/50 text-center p-2">Belum ada jam tersedia</p>}
                                                         {pickupHours.map(hDisplay => {
-                                                            const hNum = Number(hDisplay);
                                                             const isSelected = form.pickup_time.split(':')[0] === hDisplay;
-                                                            let isAvail = getIsHourAvailable(hDisplay + ':00');
-                                                            if (deliveryMethod === 'store_delivery' && selectedShippingType === 'same_day' && hNum > 12) isAvail = false;
+                                                            const isAvail = getIsHourAvailable(hDisplay + ':00');
                                                             return (
                                                                 <button key={hDisplay} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: withPickupHour(hDisplay, f.pickup_time, selectedStore) })); }}
                                                                     className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail ? 'opacity-30 cursor-not-allowed' : isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>
@@ -760,8 +833,7 @@ export default function OrderPage() {
                                                             const isSelected = form.pickup_time.split(':')[1] === m;
                                                             const hDisplay = form.pickup_time.split(':')[0];
                                                             // Pick an hour first.
-                                                            let isAvail = !!hDisplay && isPickupMinuteAllowed(hDisplay, m, selectedStore);
-                                                            if (deliveryMethod === 'store_delivery' && selectedShippingType === 'same_day' && hDisplay === '12' && m !== '00') isAvail = false;
+                                                            const isAvail = !!hDisplay && isPickupMinuteAllowed(hDisplay, m, selectedStore);
                                                             return (
                                                                 <button key={m} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: `${hDisplay}:${m}` })); }}
                                                                     className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail ? 'opacity-30 cursor-not-allowed' : isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>
@@ -894,6 +966,11 @@ export default function OrderPage() {
                                     { label: 'Nama', value: form.customer_name },
                                     { label: 'No. WhatsApp', value: form.customer_phone },
                                     { label: 'Waktu Pengambilan', value: formatSchedule(form.pickup_date, form.pickup_time) },
+                                    { label: 'Metode Pengambilan', value: DELIVERY_OPTIONS.find(d => d.key === deliveryMethod)?.label },
+                                    ...(deliveryMethod === 'store_delivery' ? [
+                                        { label: 'Alamat Pengiriman', value: deliveryAddress },
+                                        { label: 'Kurir', value: selectedCourier ? `${selectedCourier.courier_name} · ${selectedCourier.service_name}` : '-' },
+                                    ] : []),
                                 ].map(({ label, value }) => (
                                     <div key={label} className="flex justify-between border-b border-primary/10 pb-2 gap-4">
                                         <span className="text-primary/50 shrink-0">{label}</span>
@@ -919,10 +996,10 @@ export default function OrderPage() {
                                     })}
                                     {menus.length > 0 && (
                                         <>
-                                            {deliveryMethod === 'store_delivery' && (shippingFee !== null || shippingLoading) && (
+                                            {deliveryMethod === 'store_delivery' && selectedCourier && (
                                                 <div className="flex justify-between items-start gap-3 py-1 mt-1 text-primary/80">
-                                                    <div className="text-xs">Ongkir ({selectedShippingType === 'instant' ? 'Instant' : 'Same Day'})</div>
-                                                    <div className="font-bold whitespace-nowrap">{shippingFee !== null ? `Rp ${shippingFee.toLocaleString('id-ID')}` : 'Memuat...'}</div>
+                                                    <div className="text-xs">Ongkir ({selectedCourier.courier_name} · {selectedCourier.service_name})</div>
+                                                    <div className="font-bold whitespace-nowrap">Rp {selectedCourier.price.toLocaleString('id-ID')}</div>
                                                 </div>
                                             )}
                                             <div className="flex justify-between pt-3 border-t border-primary/10 mt-2">
@@ -951,7 +1028,8 @@ export default function OrderPage() {
                                         // DOKU takes QRIS's place while DOKU_PAYMENT is on.
                                         key === 'QRIS' ? !dokuEnabled && !!selectedStore?.qris_image_url
                                             : key === 'DOKU' ? dokuEnabled
-                                                : true
+                                                : key === 'TRANSFER' ? transferEnabled
+                                                    : true
                                     ).map(({ key, label, desc }) => {
                                         const isSelected = form.payment_method === key;
                                         return (
@@ -978,26 +1056,9 @@ export default function OrderPage() {
                     {/* Total Estimasi — shown on menu step only */}
                     {step === 'menu' && menus.length > 0 && (
                         <div className="pt-2">
-                            {deliveryMethod === 'store_delivery' && (destLat && destLng) && (
-                                <div className="flex flex-col gap-1.5 mb-3 border-b border-primary/10 pb-3">
-                                    <div className="flex justify-between items-end">
-                                        <span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Estimasi Pesanan</span>
-                                        <span className="text-sm font-bold text-primary">Rp {itemsTotal.toLocaleString('id-ID')}</span>
-                                    </div>
-                                    <div className="flex justify-between items-end">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Ongkir ({selectedShippingType === 'instant' ? 'Instant' : 'Same Day'})</span>
-                                            {shippingLoading && <LuRefreshCw size={10} className="animate-spin text-primary/40" />}
-                                        </div>
-                                        <span className="text-sm font-bold text-primary">
-                                            {shippingFee ? `Rp ${shippingFee.toLocaleString('id-ID')}` : '-'}
-                                        </span>
-                                    </div>
-                                </div>
-                            )}
                             <div className="flex justify-between items-end">
                                 <div><span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Estimasi Total</span></div>
-                                <span className="text-xl font-extrabold text-primary">Rp {grandTotal.toLocaleString('id-ID')}</span>
+                                <span className="text-xl font-extrabold text-primary">Rp {itemsTotal.toLocaleString('id-ID')}</span>
                             </div>
                         </div>
                     )}
@@ -1006,20 +1067,20 @@ export default function OrderPage() {
                 {/* Footer per step */}
                 <div className="px-5 py-5 border-t border-primary/10 bg-white sm:rounded-b-3xl mt-auto">
                     {step === 'store' && (
-                        <button onClick={() => selectedStore ? goToStep('info') : fail('Silakan pilih store terlebih dahulu')} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
+                        <button onClick={() => selectedStore ? goToStep('menu') : fail('Silakan pilih store terlebih dahulu')} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
                             <span>Lanjut</span>
                             <LuArrowRight />
                         </button>
                     )}
                     {step === 'info' && (
                         <button onClick={handleNextFromInfo} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
-                            <span>Lanjut ke Pilihan Menu</span>
+                            <span>Lanjut ke Review Pesanan</span>
                             <LuArrowRight />
                         </button>
                     )}
                     {step === 'menu' && (
                         <button onClick={handleNextFromMenu} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
-                            <span>Lanjut ke Review Pesanan</span>
+                            <span>Lanjut ke Detail Pelanggan</span>
                             <LuArrowRight />
                         </button>
                     )}

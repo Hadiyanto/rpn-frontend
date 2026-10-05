@@ -26,6 +26,8 @@ interface Order {
     payment_method?: string | null;
     /** DOKU checkout link while the order can still be paid online (public endpoint only). */
     payment_url?: string | null;
+    /** Store delivery fee, paid together with the items. */
+    delivery_fee?: number | null;
 }
 
 interface StoreBank {
@@ -184,10 +186,16 @@ export default function BuktiTransferPage({ params }: { params: Promise<{ id: st
                                         );
                                     })}
                                 </div>
+                                {Number(order.delivery_fee) > 0 && (
+                                    <div className="flex justify-between items-start">
+                                        <p className="text-sm font-bold">Ongkir</p>
+                                        <p className="text-sm font-black text-right shrink-0">Rp {Number(order.delivery_fee).toLocaleString('id-ID')}</p>
+                                    </div>
+                                )}
                                 <div className="flex justify-between items-center pt-2 mt-2 border-t-2 border-primary/10">
                                     <span className="text-xs font-black uppercase text-primary/70">Total Pembayaran</span>
                                     <span className="text-lg font-black text-brand-maroon">
-                                        Rp {orderTotal({ items: order.items ?? [] }).toLocaleString('id-ID')}
+                                        Rp {(orderTotal({ items: order.items ?? [] }) + Number(order.delivery_fee ?? 0)).toLocaleString('id-ID')}
                                     </span>
                                 </div>
                             </div>
