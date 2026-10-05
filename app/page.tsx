@@ -29,14 +29,18 @@ import type { BoxType, Menu, Variant } from '@/types/menu';
 import { BOX_TYPES, boxLabel, boxLabelID } from '@/utils/box';
 import FlavorPicker from '@/components/FlavorPicker';
 import AddressSearch from '@/components/AddressSearch';
+import { nominatimReverseGeocode, type ReverseGeocode } from '@/utils/reverseGeocode';
+import { staticMapUrl } from '@/utils/staticMap';
 import FlavorGallery, { type PickOption } from '@/components/FlavorGallery';
 import { boxPrice, flavorPrice, itemSubtotal, orderTotal, priceRangeLabel } from '@/utils/pricing';
 import { buildSelection, maxFlavorsFor, resolveVariantIds, selectedVariants } from '@/utils/flavors';
 import { normalizeVariant, toTitleCase } from '@/utils/format';
 import { isPickupMinuteAllowed, pickupHourOptions, withPickupHour } from '@/utils/pickupHours';
 
-// Leaflet map loaded client-side only
+// Delivery map, client-side only: Google Maps when NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is set, else Leaflet/OSM.
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), { ssr: false });
+const GoogleDeliveryMap = dynamic(() => import('@/components/GoogleDeliveryMap'), { ssr: false });
+const USE_GOOGLE_MAP = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 interface OrderItem {
     box_type: BoxType;
@@ -171,6 +175,9 @@ export default function OrderPage() {
     const [areaLoading, setAreaLoading] = useState(false);
 
     const shippingFee = deliveryMethod === 'store_delivery' ? selectedCourier?.price ?? null : null;
+    // Store delivery: the date/time is when the store ships the order, not when it is picked up.
+    const isStoreDelivery = deliveryMethod === 'store_delivery';
+    const scheduleWord = isStoreDelivery ? 'Pengiriman' : 'Pengambilan';
 
     // Store Delivery is offered only to whitelisted numbers; re-checked as the number is typed.
     useEffect(() => {
@@ -237,7 +244,8 @@ export default function OrderPage() {
     }, [selectedStore]);
 
     // Reverse geocode when pin dropped — fills address, extracts postal_code, auto-searches Biteship area
-    const onMapClick = useCallback(async (lat: number, lng: number) => {
+    // Reverse geocoding: Google Geocoder from GoogleDeliveryMap, Nominatim for the Leaflet map.
+    const onMapClick = useCallback(async (lat: number, lng: number, reverseGeocode: ReverseGeocode = nominatimReverseGeocode) => {
         setDestLat(lat);
         setDestLng(lng);
         // A new pin needs a new confirmation + courier check.
@@ -248,12 +256,11 @@ export default function OrderPage() {
         setSelectedArea(null);
         setAreaResults([]);
         try {
-            const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=id`);
-            const json = await r.json();
-            const addr = json.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+            const found = await reverseGeocode(lat, lng);
+            const addr = found?.address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
             setDeliveryAddress(addr);
 
-            const pc = json.address?.postcode ? Number(json.address.postcode) : null;
+            const pc = found?.postalCode ?? null;
             setPostalCode(pc);
 
             // Persist to localStorage
@@ -443,9 +450,9 @@ export default function OrderPage() {
         setErrorMessage('');
         if (!form.customer_name.trim()) return fail('Nama Pelanggan wajib diisi');
         if (!form.customer_phone.trim()) return fail('Nomor WhatsApp wajib diisi');
-        if (!form.pickup_date) return fail('Tanggal Pengambilan wajib diisi');
+        if (!form.pickup_date) return fail(`Tanggal ${scheduleWord} wajib diisi`);
         const [hh, mm] = form.pickup_time.split(':');
-        if (!hh || !mm) return fail('Waktu Pengambilan wajib dipilih');
+        if (!hh || !mm) return fail(`Waktu ${scheduleWord} wajib dipilih`);
         if (deliveryMethod === 'store_delivery') {
             if (!deliveryAddress.trim()) return fail('Alamat pengiriman wajib diisi');
             if (!destLat || !destLng) return fail('Silakan tandai lokasi di peta');
@@ -537,7 +544,9 @@ export default function OrderPage() {
                         {[
                             { label: 'Status', value: submittedOrder.status },
                             { label: 'Metode Bayar', value: submittedOrder.payment_method },
-                            { label: 'Waktu Pengambilan', value: formatSchedule(submittedOrder.pickup_date, submittedOrder.pickup_time) },
+                            submittedOrder.delivery_method === 'store_delivery'
+                                ? { label: 'Jadwal Pengiriman', value: formatSchedule(submittedOrder.pickup_date, submittedOrder.pickup_time) }
+                                : { label: 'Waktu Pengambilan', value: formatSchedule(submittedOrder.pickup_date, submittedOrder.pickup_time) },
                         ].map(({ label, value }) => (
                             <div key={label} className="flex justify-between border-b border-primary/10 pb-2">
                                 <span className="text-primary/50">{label}</span>
@@ -676,7 +685,7 @@ export default function OrderPage() {
 
                             {/* Order Type */}
                             <div className="space-y-3">
-                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">METODE PENGAMBILAN *</label>
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">PENGAMBILAN / PENGIRIMAN *</label>
                                 <div className="space-y-2">
                                     {DELIVERY_OPTIONS.filter(d => d.key === 'store_delivery' ? storeDeliveryAllowed : !d.hidden).map(({ key, label, desc, icon: Icon }) => {
                                         const isSelected = deliveryMethod === key;
@@ -701,7 +710,9 @@ export default function OrderPage() {
                                     <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-2 duration-200">
                                         <AddressSearch biasLat={selectedStore?.latitude} biasLng={selectedStore?.longitude} onSelect={onSearchSelect} />
                                         <div className="rounded-2xl overflow-hidden border border-primary/10 shadow-md" style={{ height: 260 }}>
-                                            <LeafletMap originLat={selectedStore?.latitude} originLng={selectedStore?.longitude} destLat={destLat} destLng={destLng} onMapClick={onMapClick} />
+                                            {USE_GOOGLE_MAP
+                                                ? <GoogleDeliveryMap originLat={selectedStore?.latitude} originLng={selectedStore?.longitude} destLat={destLat} destLng={destLng} onMapClick={onMapClick} />
+                                                : <LeafletMap originLat={selectedStore?.latitude} originLng={selectedStore?.longitude} destLat={destLat} destLng={destLng} onMapClick={onMapClick} />}
                                         </div>
 
                                         {destLat && destLng && (
@@ -727,6 +738,12 @@ export default function OrderPage() {
                                             <textarea rows={3} value={deliveryAddress} onChange={e => { setDeliveryAddress(e.target.value); resetDeliveryQuote(); }}
                                                 placeholder="Tap peta untuk mengisi otomatis, atau ketik manual..."
                                                 className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" />
+                                            <div className="flex items-start gap-2 bg-brand-yellow/20 border border-brand-yellow rounded-xl p-2.5">
+                                                <LuInfo className="text-primary mt-0.5 shrink-0" size={14} />
+                                                <p className="text-[11px] font-semibold text-primary leading-snug">
+                                                    Alamat dari peta bisa kurang tepat. Mohon cek dan lengkapi: nama jalan, nomor rumah, RT/RW, nama gedung/blok/lantai, dan patokan. Kurir mengantar ke titik di peta dan alamat ini.
+                                                </p>
+                                            </div>
                                         </div>
 
                                         {/* Catatan untuk driver */}
@@ -790,16 +807,21 @@ export default function OrderPage() {
                                 )}
                             </div>
 
-                            {/* Pickup Date & Time */}
+                            {/* Pickup Date & Time (store delivery: when the store ships it) */}
+                            {isStoreDelivery && (
+                                <p className="text-[11px] font-medium text-primary/60 -mb-3">
+                                    Pilih waktu pesanan dikirim dari toko. Kurir dipesan saat pesanan siap; lama perjalanan sesuai estimasi kurir.
+                                </p>
+                            )}
                             <div className="flex gap-3">
                                 <div className="flex-1 space-y-1.5 flex flex-col">
-                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal Pengambilan *</label>
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal {scheduleWord} *</label>
                                     <div className="flex-1 min-h-[44px]">
                                         <DatePicker selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null} onChange={(date: Date | null) => { if (date) { const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); setForm(f => ({ ...f, pickup_date: local.toISOString().split('T')[0] })); } }} filterDate={filterPassedDates} dateFormat="dd/MM/yyyy" className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholderText="Pilih Tanggal" disabled={!quotasLoading && quotas.length === 0} />
                                     </div>
                                 </div>
                                 <div className="w-36 space-y-1.5 relative">
-                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu Pengambilan*</label>
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu {scheduleWord}*</label>
                                     <button type="button" disabled={!quotasLoading && quotas.length === 0} onClick={() => setShowTimePicker(!showTimePicker)} className="w-full h-11 px-4 flex items-center justify-center gap-1 rounded-xl border-2 border-primary/10 bg-primary/5 disabled:opacity-50 hover:bg-primary/10 transition-colors text-primary text-sm font-extrabold focus:outline-none focus:border-primary/30">
                                         <span>{form.pickup_time.split(':')[0] || '--'}</span>
                                         <span className="opacity-50">:</span>
@@ -961,16 +983,43 @@ export default function OrderPage() {
 
                     {step === 'review' && (
                         <>
+                            {/* Store Delivery: last look at the pin + address before paying; "Ubah" goes back to fix it. */}
+                            {deliveryMethod === 'store_delivery' && destLat && destLng && (() => {
+                                const snapshot = staticMapUrl(destLat, destLng);
+                                return (
+                                    <div className="bg-primary/5 rounded-2xl overflow-hidden text-sm">
+                                        {snapshot && (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={snapshot} alt="Titik lokasi pengiriman" className="w-full h-40 object-cover" loading="lazy" />
+                                        )}
+                                        <div className="p-4 space-y-2">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="text-[10px] font-black uppercase text-primary/60">Lokasi Pengiriman</span>
+                                                <button onClick={() => goToStep('info')} className="text-[10px] font-bold text-primary underline">Ubah</button>
+                                            </div>
+                                            <p className="font-bold text-primary leading-snug">{deliveryAddress}</p>
+                                            {driverNote.trim() && <p className="text-xs text-primary/60">Catatan driver: {driverNote.trim()}</p>}
+                                            {selectedCourier && (
+                                                <div className="flex justify-between pt-2 border-t border-primary/10 text-xs">
+                                                    <span className="text-primary/60">Kurir: <span className="font-bold text-primary">{selectedCourier.courier_name} · {selectedCourier.service_name}</span>{selectedCourier.duration ? ` (${selectedCourier.duration})` : ''}</span>
+                                                    <span className="font-bold text-primary whitespace-nowrap">Rp {selectedCourier.price.toLocaleString('id-ID')}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             <div className="bg-primary/5 rounded-2xl p-4 space-y-3 text-sm">
                                 {[
                                     { label: 'Nama', value: form.customer_name },
                                     { label: 'No. WhatsApp', value: form.customer_phone },
-                                    { label: 'Waktu Pengambilan', value: formatSchedule(form.pickup_date, form.pickup_time) },
-                                    { label: 'Metode Pengambilan', value: DELIVERY_OPTIONS.find(d => d.key === deliveryMethod)?.label },
-                                    ...(deliveryMethod === 'store_delivery' ? [
-                                        { label: 'Alamat Pengiriman', value: deliveryAddress },
-                                        { label: 'Kurir', value: selectedCourier ? `${selectedCourier.courier_name} · ${selectedCourier.service_name}` : '-' },
-                                    ] : []),
+                                    isStoreDelivery
+                                        ? { label: 'Jadwal Pengiriman', value: formatSchedule(form.pickup_date, form.pickup_time) }
+                                        : { label: 'Waktu Pengambilan', value: formatSchedule(form.pickup_date, form.pickup_time) },
+                                    isStoreDelivery
+                                        ? { label: 'Pengiriman', value: 'Dikirim oleh toko' }
+                                        : { label: 'Metode Pengambilan', value: DELIVERY_OPTIONS.find(d => d.key === deliveryMethod)?.label },
                                 ].map(({ label, value }) => (
                                     <div key={label} className="flex justify-between border-b border-primary/10 pb-2 gap-4">
                                         <span className="text-primary/50 shrink-0">{label}</span>
