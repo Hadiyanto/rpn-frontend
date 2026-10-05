@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 import Toast from '@/components/Toast';
 import { fetchJson } from '@/utils/fetchJson';
+import { dateTimeLocalToISO, toDateTimeLocal } from '@/utils/datetime';
 import { API_URL } from '@/utils/config';
 
 // Weight/volume units are bought in bulk ("Rp 700.000 for 5000 g"); anything else (pcs, …) is
@@ -50,6 +51,9 @@ export default function StockPage() {
     const [qtyChange, setQtyChange] = useState('');
     const [isIncrement, setIsIncrement] = useState(true); // Default: stock-in
     const [totalPrice, setTotalPrice] = useState('');
+    // When the movement (or the initial stock) happened; empty = now. An earlier date re-runs the
+    // item's history on the server, so later balances and order costs follow.
+    const [movementDate, setMovementDate] = useState('');
 
     const { toast, showToast, hideToast } = useToast();
 
@@ -101,6 +105,7 @@ export default function StockPage() {
         setPriceAmount('');
         setCurrentPricePerUnit(null);
         setCustomName(false);
+        setMovementDate('');
     };
 
     // Counted items (pcs) are priced per unit directly; weights/volumes as "Rp total for N units".
@@ -187,6 +192,7 @@ export default function StockPage() {
                         store_id: activeStoreId,
                         qty: newItemQty ? parseFloat(newItemQty) : 0,
                         price_per_unit: computedPricePerUnit,
+                        created_at: dateTimeLocalToISO(movementDate),
                     }),
                 });
             if (json.status === 'ok') {
@@ -254,6 +260,7 @@ export default function StockPage() {
                     is_target,
                     notes: n,
                     total_price,
+                    created_at: dateTimeLocalToISO(movementDate),
                 }),
             });
             if (json.status === 'ok') {
@@ -261,6 +268,7 @@ export default function StockPage() {
                 setIsModalOpen(false);
                 setQtyChange('');
                 setTotalPrice('');
+                setMovementDate('');
                 fetchStocks();
             } else {
                 showToast('❌ Gagal', json.message || 'Gagal update stok', 'error');
@@ -276,6 +284,7 @@ export default function StockPage() {
         setQtyChange('');
         setIsIncrement(true); // Default: stock-in; untick for a physical count
         setTotalPrice('');
+        setMovementDate('');
         setIsModalOpen(true);
     };
 
@@ -378,6 +387,19 @@ export default function StockPage() {
                             </div>
                             )}
                         </div>
+                        {!editingStockId && newItemQty && (
+                            <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60 ml-1">Tanggal Stok Awal (Opsional)</label>
+                                    <input
+                                        type="datetime-local"
+                                        value={movementDate}
+                                        max={toDateTimeLocal(new Date())}
+                                        onChange={e => setMovementDate(e.target.value)}
+                                        className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm font-bold text-primary focus:ring-2 focus:ring-primary/10 focus:border-primary outline-none transition-all"
+                                    />
+                                    <p className="text-[10px] font-medium text-gray-400 ml-1">Kosongkan = sekarang.</p>
+                                </div>
+                        )}
                         {/* Purchase price → price per unit, used for HPP */}
                         <div className="space-y-2 rounded-2xl bg-primary/5 p-3">
                             <div className="flex items-baseline justify-between gap-2">
@@ -618,6 +640,18 @@ export default function StockPage() {
                                     })()}
                                 </div>
                             )}
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-primary/60 ml-1">Tanggal (Opsional)</label>
+                                    <input
+                                        type="datetime-local"
+                                        value={movementDate}
+                                        max={toDateTimeLocal(new Date())}
+                                        onChange={e => setMovementDate(e.target.value)}
+                                        className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm font-bold text-primary focus:ring-2 focus:ring-primary/10 focus:border-primary outline-none transition-all"
+                                    />
+                                    <p className="text-[10px] font-medium text-gray-400 ml-1">Kosongkan = sekarang. Tanggal mundur akan menghitung ulang saldo &amp; HPP sesudahnya.</p>
+                                </div>
 
                             <button
                                 onClick={handleAdjustStock}
