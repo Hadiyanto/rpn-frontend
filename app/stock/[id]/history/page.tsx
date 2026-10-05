@@ -44,6 +44,14 @@ const PRESETS: { key: string; label: string; range: () => [string, string] }[] =
     { key: 'month', label: 'Bulan ini', range: () => { const n = new Date(); return [day(new Date(n.getFullYear(), n.getMonth(), 1)), day(n)]; } },
 ];
 
+// Booked by an order: has order_id, or (older rows / deleted orders) only names it in the note.
+const isOrderMovement = (h: HistoryRow) => h.order_id != null || /^(Reversal )?Order #\d+$/.test(h.notes ?? '');
+
+type Direction = 'ALL' | 'IN' | 'OUT';
+const DIRECTIONS: { key: Direction; label: string }[] = [
+    { key: 'ALL', label: 'Semua' }, { key: 'IN', label: 'Masuk' }, { key: 'OUT', label: 'Keluar' },
+];
+
 const fmt = (n: number | string) => Number(n).toLocaleString('id-ID', { maximumFractionDigits: 2 });
 const boxesText = (b: Boxes) => [b.full ? `${b.full} Box Besar` : '', b.half ? `${b.half} Box Kecil` : ''].filter(Boolean).join(' · ') || '0 box';
 const timeText = (iso: string) => new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -57,6 +65,7 @@ export default function StockHistoryPage() {
     const [preset, setPreset] = useState('today');
     const [[from, to], setRange] = useState<[string, string]>(PRESETS[0].range());
     const [report, setReport] = useState<Report | null>(null);
+    const [direction, setDirection] = useState<Direction>('ALL');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
@@ -130,6 +139,8 @@ export default function StockHistoryPage() {
     };
 
     const unit = report?.stock.unit ?? '';
+    const movements = (report?.movements ?? []).filter(h =>
+        direction === 'ALL' || (direction === 'IN' ? Number(h.qty_change) > 0 : Number(h.qty_change) < 0));
     const L = report?.ledger;
     const S = report?.sales;
 
@@ -207,11 +218,23 @@ export default function StockHistoryPage() {
 
                         {/* Pergerakan */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-50 divide-y divide-gray-100">
-                            <p className="px-3 py-2 text-[10px] font-black uppercase text-primary/50">{report.movements.length} pergerakan</p>
-                            {report.movements.length === 0 && (
+                            <div className="px-3 py-2 flex items-center justify-between gap-2">
+                                <p className="text-[10px] font-black uppercase text-primary/50">{movements.length} pergerakan</p>
+                                <div className="flex gap-1">
+                                    {DIRECTIONS.map(d => (
+                                        <button key={d.key} onClick={() => setDirection(d.key)}
+                                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${direction === d.key
+                                                ? d.key === 'IN' ? 'bg-green-600 text-white' : d.key === 'OUT' ? 'bg-red-500 text-white' : 'bg-primary text-brand-yellow'
+                                                : 'bg-primary/5 text-primary/60 hover:bg-primary/10'}`}>
+                                            {d.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            {movements.length === 0 && (
                                 <p className="px-3 py-6 text-center text-xs font-medium text-primary/40">Tidak ada pergerakan di periode ini.</p>
                             )}
-                            {report.movements.map(h => {
+                            {movements.map(h => {
                                 const change = Number(h.qty_change);
                                 return (
                                     <div key={h.id} className="px-3 py-2 flex items-start gap-2">
@@ -233,7 +256,7 @@ export default function StockHistoryPage() {
                                             <p className={`text-sm font-black leading-tight ${change > 0 ? 'text-green-600' : 'text-red-500'}`}>{change > 0 ? '+' : ''}{fmt(change)}</p>
                                             <p className="text-[10px] text-gray-400">saldo {fmt(h.final_qty)}</p>
                                         </div>
-                                        {!h.order_id ? (
+                                        {!isOrderMovement(h) ? (
                                             <button onClick={() => openEdit(h)} aria-label="Edit" className="shrink-0 p-1 mt-0.5 text-primary/40 hover:text-primary">
                                                 <LuPencil size={13} />
                                             </button>
