@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { LuHistory, LuPencil, LuX } from 'react-icons/lu';
+import { LuHistory, LuPencil, LuTrash2, LuX } from 'react-icons/lu';
 import { useUserRole } from '@/hooks/useUserRole';
 import { fetchJson } from '@/utils/fetchJson';
 import { API_URL } from '@/utils/config';
@@ -133,6 +133,24 @@ export default function StockHistoryPage() {
             fetchHistory();
         } catch (e) {
             setEditError(e instanceof Error ? e.message : 'Gagal menyimpan');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const deleteMovement = async () => {
+        if (!editing) return;
+        const change = Number(editing.qty_change);
+        const label = `${editing.type} ${change > 0 ? '+' : ''}${fmt(change)} ${report?.stock.unit ?? ''} (${timeText(editing.created_at_iso ?? editing.created_at)})`;
+        if (!confirm(`Hapus pergerakan ${label}?\n\nSaldo, harga modal, dan HPP order sesudahnya akan dihitung ulang.`)) return;
+        setSaving(true);
+        setEditError('');
+        try {
+            await fetchJson(`${API_URL}/api/stocks/history/${editing.id}`, { method: 'DELETE' });
+            setEditing(null);
+            fetchHistory();
+        } catch (e) {
+            setEditError(e instanceof Error ? e.message : 'Gagal menghapus');
         } finally {
             setSaving(false);
         }
@@ -306,13 +324,19 @@ export default function StockHistoryPage() {
                                 className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm font-medium text-primary focus:border-primary outline-none" />
                         </div>
                         <p className="text-[11px] font-medium text-gray-500 bg-brand-yellow/10 rounded-xl p-2.5">
-                            Saldo, harga modal, dan HPP order setelah tanggal ini akan dihitung ulang otomatis.
+                            Saldo, harga modal, dan HPP order setelah tanggal ini akan dihitung ulang otomatis, juga saat pergerakan ini dihapus.
                         </p>
                         {editError && <p className="text-xs font-bold text-red-600">{editError}</p>}
-                        <button onClick={saveEdit} disabled={saving || !editQty}
-                            className="w-full h-12 bg-primary text-brand-yellow font-extrabold text-sm rounded-xl disabled:opacity-50">
-                            {saving ? 'Menyimpan...' : 'Simpan'}
-                        </button>
+                        <div className="flex gap-2">
+                            <button onClick={deleteMovement} disabled={saving}
+                                className="h-12 px-4 bg-red-50 text-red-600 border border-red-100 font-extrabold text-sm rounded-xl disabled:opacity-50 flex items-center gap-1.5">
+                                <LuTrash2 size={15} /> Hapus
+                            </button>
+                            <button onClick={saveEdit} disabled={saving || !editQty}
+                                className="flex-1 h-12 bg-primary text-brand-yellow font-extrabold text-sm rounded-xl disabled:opacity-50">
+                                {saving ? 'Menyimpan...' : 'Simpan'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
