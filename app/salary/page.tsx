@@ -15,6 +15,8 @@ import { API_URL } from '@/utils/config';
 import PageHeader from '@/components/PageHeader';
 import StoreSwitcher from '@/components/StoreSwitcher';
 
+interface BoxSource { store_id: number; store_name: string; boxes: number }
+
 export default function SalaryPage() {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
     const userRoleData = useUserRole('salary');
@@ -34,6 +36,10 @@ export default function SalaryPage() {
     // Salary is per store: each store has its own tiers, history and expense entries.
     const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
     const [storeId, setStoreId] = useState<number | null>(null);
+    // Stores whose sold boxes count towards this store's salary (one team can serve several stores).
+    // Tiers and the expense stay those of `storeId`.
+    const [boxStoreIds, setBoxStoreIds] = useState<number[]>([]);
+    useEffect(() => { setBoxStoreIds(storeId ? [storeId] : []); }, [storeId]);
     useEffect(() => {
         fetchJson(`${API_URL}/api/stores`)
             .then(json => { setStores(json.data); setStoreId(json.data[0]?.id ?? null); })
@@ -62,7 +68,7 @@ export default function SalaryPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [storeId]);
 
-    const handlePreviewSalary = async () => {
+    const handlePreviewSalary = async (ids: number[] = boxStoreIds) => {
         setPreviewing(true);
         try {
             // Use Jakarta Time (GMT+7) exactly to avoid timezone overlaps at midnight
@@ -77,7 +83,7 @@ export default function SalaryPage() {
             const json = await fetchJson(`${API_URL}/api/daily-salary/preview`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: dateStr, store_id: storeId })
+                body: JSON.stringify({ date: dateStr, store_id: storeId, box_store_ids: ids })
             });
 
             if (json.status === 'ok') {
@@ -102,7 +108,11 @@ export default function SalaryPage() {
             const json = await fetchJson(`${API_URL}/api/daily-salary/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date: dateStr, store_id: previewData.store_id })
+                body: JSON.stringify({
+                    date: dateStr,
+                    store_id: previewData.store_id,
+                    box_store_ids: (previewData.box_sources ?? []).map((b: BoxSource) => b.store_id),
+                })
             });
 
             if (json.status === 'ok') {
@@ -122,6 +132,36 @@ export default function SalaryPage() {
             setGenerating(false);
         }
     };
+
+    /** Tick/untick a store for the box total; at least one stays ticked. Re-runs an open preview. */
+    const toggleBoxStore = (id: number) => {
+        const next = boxStoreIds.includes(id) ? boxStoreIds.filter(x => x !== id) : [...boxStoreIds, id];
+        if (next.length === 0) {
+            showToast('⚠️ Peringatan', 'Pilih minimal 1 store untuk total box.', 'error');
+            return;
+        }
+        setBoxStoreIds(next);
+        if (isPreviewModalOpen) handlePreviewSalary(next);
+    };
+
+    const storeChecklist = (counts?: BoxSource[]) => (
+        <div className="space-y-1.5">
+            {stores.map(st => {
+                const checked = boxStoreIds.includes(st.id);
+                const count = counts?.find(b => b.store_id === st.id)?.boxes;
+                return (
+                    <label key={st.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl border cursor-pointer transition-colors ${checked ? 'border-primary/30 bg-primary/5' : 'border-primary/10 bg-white'}`}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleBoxStore(st.id)} disabled={previewing}
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                        <span className="flex-1 text-xs font-bold text-primary">
+                            {st.name}{st.id === storeId && <span className="ml-1 text-[10px] font-semibold text-primary/40">(store gaji)</span>}
+                        </span>
+                        {counts && <span className="text-xs font-black text-primary tabular-nums">{checked && count !== undefined ? `${count} box` : '–'}</span>}
+                    </label>
+                );
+            })}
+        </div>
+    );
 
     const formatDate = (isoStr: string) => {
         const d = new Date(isoStr);
@@ -173,8 +213,15 @@ export default function SalaryPage() {
                             </div>
                         </div>
 
+                        {stores.length > 1 && (
+                            <div>
+                                <label className="text-[10px] uppercase font-black tracking-wider text-primary/50 ml-1 mb-1 block">Total Box dari Store</label>
+                                {storeChecklist()}
+                            </div>
+                        )}
+
                         <button
-                            onClick={handlePreviewSalary}
+                            onClick={() => handlePreviewSalary()}
                             disabled={previewing}
                             className={`w-full h-12 mt-2 font-extrabold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${previewing ? 'bg-primary/50 text-brand-yellow/50 cursor-not-allowed' : 'bg-primary text-brand-yellow hover:opacity-90 active:scale-[0.98] shadow-primary/20'
                                 }`}
@@ -183,7 +230,7 @@ export default function SalaryPage() {
                             {previewing ? 'Menghitung Detail...' : 'Hitung & Lihat Detail'}
                         </button>
                         <p className="text-[10px] text-center font-bold text-primary/40 leading-tight">
-                            Gaji dihitung dari box terjual (PAID/DONE, Box Kecil = ½) di store ini pada hari tersebut, lalu otomatis dicatat di Pengeluaran. Generate ulang memperbarui catatan yang sama.
+                            Gaji dihitung dari box terjual (PAID/DONE, Box Kecil = ½) di store yang dicentang pada hari tersebut, dengan rumus gaji store ini, lalu otomatis dicatat di Pengeluaran store ini. Generate ulang memperbarui catatan yang sama.
                         </p>
                     </div>
                 </div>
@@ -216,6 +263,11 @@ export default function SalaryPage() {
                                         {s.total_boxes > 0 && (
                                             <span className="ml-2 text-[11px] font-bold text-primary/50">Rp {Math.round(Number(s.total_salary) / s.total_boxes).toLocaleString('id-ID')}/box</span>
                                         )}
+                                        {(s.box_sources ?? []).length > 1 && (
+                                            <p className="text-[10px] font-semibold text-primary/50 mt-1">
+                                                {(s.box_sources as BoxSource[]).map(b => `${b.store_name} ${b.boxes}`).join(' + ')} box
+                                            </p>
+                                        )}
                                     </div>
                                     <div className="text-right">
                                         <p className="text-[10px] font-bold uppercase text-primary/50 mb-0.5">Total Gaji</p>
@@ -231,8 +283,10 @@ export default function SalaryPage() {
 
             {/* Preview Modal */}
             {isPreviewModalOpen && previewData && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary/40 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-primary/40 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => !generating && setIsPreviewModalOpen(false)}>
+                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm max-h-[90dvh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
+                        onClick={e => e.stopPropagation()}>
                         <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-brand-yellow/10">
                             <div>
                                 <h3 className="font-extrabold text-lg text-primary">Preview Gaji</h3>
@@ -242,7 +296,14 @@ export default function SalaryPage() {
                                 <MdClose className="text-xl" />
                             </button>
                         </div>
-                        <div className="p-5 space-y-4">
+                        <div className={`p-5 space-y-4 transition-opacity ${previewing ? 'opacity-50' : ''}`}>
+                            {stores.length > 1 && (
+                                <div>
+                                    <p className="text-[10px] uppercase font-black tracking-wider text-primary/50 mb-1.5">Total Box dari Store</p>
+                                    {storeChecklist(previewData.box_sources)}
+                                </div>
+                            )}
+
                             <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-center">
                                 <div>
                                     <p className="text-[10px] uppercase font-black tracking-wider text-primary/50 mb-1">Total Box (Asli)</p>
@@ -281,7 +342,7 @@ export default function SalaryPage() {
                                 </button>
                                 <button
                                     onClick={handleConfirmGenerate}
-                                    disabled={generating}
+                                    disabled={generating || previewing}
                                     className={`w-full h-12 flex items-center justify-center font-extrabold text-sm rounded-xl shadow-lg transition-all ${generating ? 'bg-primary/50 text-brand-yellow/50 cursor-not-allowed' : 'bg-primary text-brand-yellow hover:opacity-90 active:scale-[0.98] shadow-primary/20'
                                         }`}
                                 >
