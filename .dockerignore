@@ -1,5 +1,9 @@
 node_modules
 .next
+.git
 .env*
 !.env.local.example
+!.env.docker.example
 npm-debug.log*
+docker-compose.yml
+infra

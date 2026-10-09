@@ -1,0 +1,26 @@
+# RPN frontend on the VPS. NEXT_PUBLIC_* values are baked into the bundle at build time, so they
+# come from rpn-frontend/.env (copy .env.docker.example), which compose reads automatically:
+#
+#   cp .env.docker.example .env      # fill in
+#   docker compose up -d --build     # rebuild after every env change or git pull
+#
+# Published on 127.0.0.1:3000 only (RPN uses host ports 3xxx: frontend 3000, backend 3001). nginx serves it as
+# https://rajapisangnugget.com — the nginx sites live in the setupvps repo (nginx/rpn/); the backend
+# is api.rajapisangnugget.com.
+
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?add NEXT_PUBLIC_SUPABASE_URL to rpn-frontend/.env}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?add NEXT_PUBLIC_SUPABASE_ANON_KEY to rpn-frontend/.env}
+        # Must be reachable from the customer's browser: the public backend URL, not a Docker hostname.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?add NEXT_PUBLIC_API_URL to rpn-frontend/.env}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
+        NEXT_PUBLIC_BRAND_NAME: ${NEXT_PUBLIC_BRAND_NAME:-Raja Pisang Nugget}
+    image: rpn-frontend
+    container_name: rpn-frontend
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    restart: unless-stopped
