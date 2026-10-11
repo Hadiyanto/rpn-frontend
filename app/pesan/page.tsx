@@ -11,7 +11,7 @@ import {
     LuLayoutGrid,
     LuLayoutTemplate,
     LuGift,
-    LuTruck,
+    // LuTruck, // "Kirim dengan Kurir" (customer_delivery) is hidden for now
     LuStore,
     LuMapPin,
     LuRefreshCw,
@@ -89,8 +89,9 @@ function formatSchedule(dateStr: string, timeStr: string) {
 
 const DELIVERY_OPTIONS: { key: DeliveryMethod; label: string; desc: string; icon: any; hidden?: boolean }[] = [
     { key: 'pickup', label: 'Ambil di Toko', desc: 'Pesanan diambil langsung di toko', icon: LuStore },
-    { key: 'customer_delivery', label: 'Kirim dengan Kurir', desc: 'Kurir dipesan oleh pelanggan', icon: LuTruck },
-    // Shown only when BITESHIP_ENABLED=true and the customer's number passes BITESHIP_WHITELIST (storeDeliveryAllowed).
+    // Hidden for now: customer books their own courier.
+    // { key: 'customer_delivery', label: 'Kirim dengan Kurir', desc: 'Kurir dipesan oleh pelanggan', icon: LuTruck },
+    // Store Delivery (Biteship) is always offered — no BITESHIP_ENABLED / BITESHIP_WHITELIST check.
     { key: 'store_delivery', label: 'Store Delivery', desc: 'Toko yang mengirim ke customer', icon: LuMapPin },
 ];
 
@@ -114,10 +115,9 @@ export default function OrderPage() {
     const [dokuEnabled, setDokuEnabled] = useState(false);
     // TRANSFER_PAYMENT=false on the backend hides bank transfer.
     const [transferEnabled, setTransferEnabled] = useState(true);
-    // BITESHIP_ENABLED=true on the backend; whether this customer gets Store Delivery is checked by
-    // phone number against BITESHIP_WHITELIST (server-side).
-    const [biteshipEnabled, setBiteshipEnabled] = useState(false);
-    const [storeDeliveryAllowed, setStoreDeliveryAllowed] = useState(false);
+    // Store Delivery is always offered now (no BITESHIP_ENABLED / BITESHIP_WHITELIST check).
+    // const [biteshipEnabled, setBiteshipEnabled] = useState(false);
+    // const [storeDeliveryAllowed, setStoreDeliveryAllowed] = useState(false);
     const [step, setStep] = useState<Step>('store');
     const [stores, setStores] = useState<any[]>([]);
     const [selectedStore, setSelectedStore] = useState<any>(null);
@@ -159,7 +159,7 @@ export default function OrderPage() {
                 if (json.status !== 'ok') return;
                 setDokuEnabled(!!json.data.doku_enabled);
                 setTransferEnabled(json.data.transfer_enabled !== false);
-                setBiteshipEnabled(!!json.data.biteship_enabled);
+                // setBiteshipEnabled(!!json.data.biteship_enabled);
             })
             .catch(err => console.error('Gagal memuat konfigurasi pembayaran', err));
     }, []);
@@ -180,29 +180,30 @@ export default function OrderPage() {
     const isStoreDelivery = deliveryMethod === 'store_delivery';
     const scheduleWord = isStoreDelivery ? 'Pengiriman' : 'Pengambilan';
 
-    // Store Delivery is offered only to whitelisted numbers; re-checked as the number is typed.
-    useEffect(() => {
-        const phone = form.customer_phone;
-        if (!biteshipEnabled || phone.length < 9) {
-            setStoreDeliveryAllowed(false);
-            return;
-        }
-        let cancelled = false;
-        const timeoutId = setTimeout(() => {
-            fetchJson(`${API_URL}/api/biteship/eligibility`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ customer_phone: phone }),
-            })
-                .then(json => { if (!cancelled) setStoreDeliveryAllowed(json.status === 'ok' && !!json.data.store_delivery); })
-                .catch(() => { if (!cancelled) setStoreDeliveryAllowed(false); });
-        }, 400);
-        return () => { cancelled = true; clearTimeout(timeoutId); };
-    }, [biteshipEnabled, form.customer_phone]);
-
-    useEffect(() => {
-        if (!storeDeliveryAllowed && deliveryMethod === 'store_delivery') setDeliveryMethod('pickup');
-    }, [storeDeliveryAllowed, deliveryMethod]);
+    // Whitelist check disabled: Store Delivery is offered to every customer.
+    // // Store Delivery is offered only to whitelisted numbers; re-checked as the number is typed.
+    // useEffect(() => {
+    //     const phone = form.customer_phone;
+    //     if (!biteshipEnabled || phone.length < 9) {
+    //         setStoreDeliveryAllowed(false);
+    //         return;
+    //     }
+    //     let cancelled = false;
+    //     const timeoutId = setTimeout(() => {
+    //         fetchJson(`${API_URL}/api/biteship/eligibility`, {
+    //             method: 'POST',
+    //             headers: { 'Content-Type': 'application/json' },
+    //             body: JSON.stringify({ customer_phone: phone }),
+    //         })
+    //             .then(json => { if (!cancelled) setStoreDeliveryAllowed(json.status === 'ok' && !!json.data.store_delivery); })
+    //             .catch(() => { if (!cancelled) setStoreDeliveryAllowed(false); });
+    //     }, 400);
+    //     return () => { cancelled = true; clearTimeout(timeoutId); };
+    // }, [biteshipEnabled, form.customer_phone]);
+    //
+    // useEffect(() => {
+    //     if (!storeDeliveryAllowed && deliveryMethod === 'store_delivery') setDeliveryMethod('pickup');
+    // }, [storeDeliveryAllowed, deliveryMethod]);
 
     const [menus, setMenus] = useState<Menu[]>([]);
     const [variants, setVariants] = useState<Variant[]>([]);
@@ -640,7 +641,7 @@ export default function OrderPage() {
         <div className="bg-brand-white font-display text-primary min-h-dvh flex flex-col items-center p-0 sm:p-4 sm:py-8">
             <div className="relative bg-white rounded-none sm:rounded-[28px] flex flex-col w-full max-w-[480px] min-h-dvh sm:min-h-fit shadow-2xl">
                 {step === 'store' || step === 'menu'
-                    ? <OrderBanner storeCount={stores.length} />
+                    ? <OrderBanner />
                     : <div className="w-12 h-1 bg-primary/10 rounded-full mx-auto mt-3 sm:mt-4" />}
 
                 <StepHeader
@@ -705,7 +706,7 @@ export default function OrderPage() {
                             <div className="space-y-3">
                                 <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">PENGAMBILAN / PENGIRIMAN *</label>
                                 <div className="space-y-2">
-                                    {DELIVERY_OPTIONS.filter(d => d.key === 'store_delivery' ? storeDeliveryAllowed : !d.hidden).map(({ key, label, desc, icon: Icon }) => {
+                                    {DELIVERY_OPTIONS.filter(d => !d.hidden).map(({ key, label, desc, icon: Icon }) => {
                                         const isSelected = deliveryMethod === key;
                                         return (
                                             <button key={key} onClick={() => setDeliveryMethod(key)}
