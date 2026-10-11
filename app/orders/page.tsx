@@ -566,8 +566,8 @@ export default function OrdersPage() {
             .catch(console.error);
     }, []);
 
-    // Unique pickup dates from orders, sorted ASC
-    const uniqueDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort();
+    // Unique pickup dates from orders, newest first
+    const uniqueDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort().reverse();
 
     const filtered = orders.filter((order) => {
         const matchSearch =
