@@ -828,19 +828,19 @@ export default function OrderPage() {
 
                             {/* Pickup Date & Time (store delivery: when the store ships it) */}
                             {isStoreDelivery && (
-                                <p className="text-[11px] font-medium text-primary/60 -mb-3">
+                                <p className="text-[11px] font-medium text-primary/60 leading-snug">
                                     Pilih waktu pesanan dikirim dari toko. Kurir dipesan saat pesanan siap; lama perjalanan sesuai estimasi kurir.
                                 </p>
                             )}
-                            <div className="flex gap-3">
-                                <div className="flex-1 space-y-1.5 flex flex-col">
-                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal {scheduleWord} *</label>
-                                    <div className="flex-1 min-h-[44px]">
+                            <div className="flex items-start gap-3">
+                                <div className="flex-1 min-w-0 space-y-1.5">
+                                    <label className="block text-[10px] leading-4 font-black uppercase tracking-wider text-primary/60">Tanggal {scheduleWord} *</label>
+                                    <div className="h-11 [&_.react-datepicker-wrapper]:block [&_.react-datepicker-wrapper]:w-full">
                                         <DatePicker selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null} onChange={(date: Date | null) => { if (date) { const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); setForm(f => ({ ...f, pickup_date: local.toISOString().split('T')[0] })); } }} filterDate={filterPassedDates} dateFormat="dd/MM/yyyy" className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholderText="Pilih Tanggal" disabled={!quotasLoading && quotas.length === 0} />
                                     </div>
                                 </div>
-                                <div className="w-36 space-y-1.5 relative">
-                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu {scheduleWord}*</label>
+                                <div className="w-36 shrink-0 space-y-1.5 relative">
+                                    <label className="block text-[10px] leading-4 font-black uppercase tracking-wider text-primary/60">Waktu {scheduleWord} *</label>
                                     <button type="button" disabled={!quotasLoading && quotas.length === 0} onClick={() => setShowTimePicker(!showTimePicker)} className="w-full h-11 px-4 flex items-center justify-center gap-1 rounded-xl border-2 border-primary/10 bg-primary/5 disabled:opacity-50 hover:bg-primary/10 transition-colors text-primary text-sm font-extrabold focus:outline-none focus:border-primary/30">
                                         <span>{form.pickup_time.split(':')[0] || '--'}</span>
                                         <span className="opacity-50">:</span>
