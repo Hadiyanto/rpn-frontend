@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
-import { LuPlus, LuHistory, LuPackage, LuPencil, LuTrash2 } from 'react-icons/lu';
+import { LuPlus, LuHistory, LuPackage, LuPencil, LuTrash2, LuPackagePlus, LuClipboardCheck, LuChevronRight, LuEllipsisVertical } from 'react-icons/lu';
 import PageHeader from '@/components/PageHeader';
 import StoreSwitcher from '@/components/StoreSwitcher';
 import { MdClose } from 'react-icons/md';
@@ -46,6 +46,8 @@ export default function StockPage() {
     // true = typing a name that isn't in the dropdown yet.
     const [customName, setCustomName] = useState(false);
 
+    // Action sheet of one item: stock-in, physical count, history, edit.
+    const [actionStock, setActionStock] = useState<(typeof stocks)[number] | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedStock, setSelectedStock] = useState<any>(null);
     const [qtyChange, setQtyChange] = useState('');
@@ -279,10 +281,12 @@ export default function StockPage() {
         }
     };
 
-    const openAdjustModal = (stock: any) => {
+    // increment = stock-in (add qty + purchase price); false = physical count (enter what's left).
+    const openAdjustModal = (stock: any, increment: boolean) => {
+        setActionStock(null);
         setSelectedStock(stock);
         setQtyChange('');
-        setIsIncrement(true); // Default: stock-in; untick for a physical count
+        setIsIncrement(increment);
         setTotalPrice('');
         setMovementDate('');
         setIsModalOpen(true);
@@ -493,7 +497,7 @@ export default function StockPage() {
                             >
                                 <div
                                     className="flex-1 min-w-0 cursor-pointer pr-2"
-                                    onClick={() => openAdjustModal(stock)}
+                                    onClick={() => setActionStock(stock)}
                                 >
                                     <h3 className="font-bold text-sm text-primary truncate leading-tight">
                                         {stock.item_name}
@@ -516,42 +520,65 @@ export default function StockPage() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => openEditItem(stock)}
-                                        className="p-2.5 text-primary/40 hover:text-primary hover:bg-gray-100 rounded-lg transition-colors"
-                                        title="Edit / hapus bahan"
-                                    >
-                                        <LuPencil size={16} />
-                                    </button>
-                                    <button
-                                        onClick={() => openAdjustModal(stock)}
-                                        className="px-3 py-2 bg-brand-yellow/30 hover:bg-brand-yellow/50 text-primary font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
-                                    >
-                                        <LuPlus size={14} /> Penyesuaian
-                                    </button>
-
-                                    <button
-                                        onClick={() => router.push(`/stock/${stock.id}/history`)}
-                                        className="p-2.5 text-primary/40 hover:text-primary hover:bg-gray-100 rounded-lg transition-colors"
-                                        title="Lihat Riwayat"
-                                    >
-                                        <LuHistory size={18} />
-                                    </button>
-                                </div>
+                                <button
+                                    onClick={() => setActionStock(stock)}
+                                    className="px-3 py-2 bg-brand-yellow/30 hover:bg-brand-yellow/50 text-primary font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                    Atur <LuEllipsisVertical size={14} />
+                                </button>
                             </div>
                         ))}
                     </div>
                 )}
             </div>
 
+            {/* Item action sheet */}
+            {actionStock && (
+                <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-primary/40 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => setActionStock(null)}>
+                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm shadow-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 pb-[env(safe-area-inset-bottom)]"
+                        onClick={e => e.stopPropagation()}>
+                        <div className="w-10 h-1 bg-primary/15 rounded-full mx-auto mt-3 sm:hidden" />
+                        <div className="px-5 pt-4 pb-3 flex justify-between items-start">
+                            <div className="min-w-0">
+                                <h3 className="font-extrabold text-lg text-primary truncate">{actionStock.item_name}</h3>
+                                <p className="text-xs font-medium text-primary/60">Stok saat ini: <b className="text-primary">{actionStock.qty}</b> {actionStock.unit}</p>
+                            </div>
+                            <button onClick={() => setActionStock(null)} className="p-2 bg-gray-50 rounded-full text-gray-400 hover:text-gray-600 transition-colors">
+                                <MdClose className="text-xl" />
+                            </button>
+                        </div>
+                        <div className="px-3 pb-4 space-y-1">
+                            {[
+                                { icon: LuPackagePlus, title: 'Stok Masuk', text: 'Tambah stok dari pembelian + harga beli', onClick: () => openAdjustModal(actionStock, true) },
+                                { icon: LuClipboardCheck, title: 'Hitung Fisik', text: 'Isi sisa stok sebenarnya (stok opname)', onClick: () => openAdjustModal(actionStock, false) },
+                                { icon: LuHistory, title: 'Riwayat Stok', text: 'Lihat stok masuk & keluar', onClick: () => router.push(`/stock/${actionStock.id}/history`) },
+                                { icon: LuPencil, title: 'Edit / Hapus Bahan', text: 'Nama, satuan, harga modal', onClick: () => { const st = actionStock; setActionStock(null); openEditItem(st); } },
+                            ].map(({ icon: Icon, title, text, onClick }) => (
+                                <button key={title} onClick={onClick}
+                                    className="w-full flex items-center gap-3 p-3 rounded-2xl text-left hover:bg-primary/5 active:bg-primary/10 transition-colors">
+                                    <span className="w-10 h-10 rounded-xl bg-brand-yellow/30 text-primary flex items-center justify-center shrink-0"><Icon size={18} /></span>
+                                    <span className="flex-1 min-w-0">
+                                        <span className="block text-sm font-extrabold text-primary">{title}</span>
+                                        <span className="block text-[11px] font-medium text-primary/50">{text}</span>
+                                    </span>
+                                    <LuChevronRight className="text-primary/30 shrink-0" />
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Adjust Stock Modal */}
             {isModalOpen && selectedStock && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary/40 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-primary/40 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => setIsModalOpen(false)}>
+                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm max-h-[90dvh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
+                        onClick={e => e.stopPropagation()}>
                         <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-brand-yellow/10">
                             <div>
-                                <h3 className="font-extrabold text-lg text-primary">Penyesuaian Stok</h3>
+                                <h3 className="font-extrabold text-lg text-primary">{isIncrement ? 'Stok Masuk' : 'Hitung Fisik'}</h3>
                                 <p className="text-xs font-medium text-primary/60">{selectedStock.item_name}</p>
                             </div>
                             <button onClick={() => setIsModalOpen(false)} className="p-2 bg-white rounded-full text-gray-400 hover:text-gray-600 shadow-sm transition-colors">
@@ -565,17 +592,13 @@ export default function StockPage() {
                             </div>
 
                             <div className="space-y-4">
-                                <div className="flex items-center justify-between p-3 bg-brand-yellow/5 rounded-xl border border-brand-yellow/20 cursor-pointer" onClick={() => setIsIncrement(!isIncrement)}>
-                                    <div>
-                                        <p className="text-xs font-extrabold text-primary uppercase">Stok Masuk (IN)</p>
-                                        <p className="text-[10px] font-bold text-primary/50">Hilangkan centang untuk hitung fisik (isi sisa stok)</p>
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        checked={isIncrement}
-                                        onChange={(e) => setIsIncrement(e.target.checked)}
-                                        className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
-                                    />
+                                <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-xl">
+                                    {[{ inc: true, label: 'Stok Masuk' }, { inc: false, label: 'Hitung Fisik' }].map(o => (
+                                        <button key={o.label} type="button" onClick={() => setIsIncrement(o.inc)}
+                                            className={`h-9 rounded-lg text-xs font-extrabold transition-colors ${isIncrement === o.inc ? 'bg-white text-primary shadow-sm' : 'text-primary/50'}`}>
+                                            {o.label}
+                                        </button>
+                                    ))}
                                 </div>
 
                                 <div className="space-y-1.5">

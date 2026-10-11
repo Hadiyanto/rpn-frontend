@@ -1,0 +1,1179 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import {
+    LuPlus,
+    LuTrash2,
+    LuChevronDown,
+    LuChevronLeft,
+    LuCheck,
+    LuLayoutGrid,
+    LuLayoutTemplate,
+    LuGift,
+    LuTruck,
+    LuStore,
+    LuMapPin,
+    LuRefreshCw,
+    LuInfo,
+    LuUser,
+    LuPhone,
+    LuArrowRight,
+} from 'react-icons/lu';
+import { MdClose } from 'react-icons/md';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { fetchJson } from '@/utils/fetchJson';
+import { API_URL } from '@/utils/config';
+import type { BoxType, Menu, Variant } from '@/types/menu';
+import { BOX_TYPES, boxLabel, boxLabelID } from '@/utils/box';
+import FlavorPicker from '@/components/FlavorPicker';
+import OrderBanner from '@/components/OrderBanner';
+import AddressSearch from '@/components/AddressSearch';
+import { nominatimReverseGeocode, type ReverseGeocode } from '@/utils/reverseGeocode';
+import { staticMapUrl } from '@/utils/staticMap';
+import FlavorGallery, { type PickOption } from '@/components/FlavorGallery';
+import { boxPrice, flavorPrice, itemSubtotal, orderTotal, priceRangeLabel } from '@/utils/pricing';
+import { buildSelection, maxFlavorsFor, resolveVariantIds, selectedVariants } from '@/utils/flavors';
+import { normalizeVariant, toTitleCase } from '@/utils/format';
+import { isPickupMinuteAllowed, pickupHourOptions, withPickupHour } from '@/utils/pickupHours';
+
+// Delivery map, client-side only: Google Maps when NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is set, else Leaflet/OSM.
+const LeafletMap = dynamic(() => import('@/components/LeafletMap'), { ssr: false });
+const GoogleDeliveryMap = dynamic(() => import('@/components/GoogleDeliveryMap'), { ssr: false });
+const USE_GOOGLE_MAP = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+interface OrderItem {
+    box_type: BoxType;
+    name: string;
+    qty: number;
+    variant_ids?: number[];
+    isExpanded?: boolean;
+}
+
+type DeliveryMethod = 'pickup' | 'customer_delivery' | 'store_delivery';
+// Flow: store → menu → customer details (incl. delivery) → review → payment.
+type Step = 'store' | 'menu' | 'info' | 'review' | 'payment';
+const PREV_STEP: Partial<Record<Step, Step>> = { menu: 'store', info: 'menu', review: 'info', payment: 'review' };
+
+/** A courier the customer can pick for Store Delivery (POST /api/biteship/store-delivery-options). */
+interface DeliveryOption {
+    courier_company: string;
+    courier_type: string;
+    courier_name: string;
+    service_name: string;
+    duration: string | null;
+    price: number;
+    shipping_fee: number;
+    shipping_fee_discount: number;
+    shipping_fee_surcharge: number;
+}
+
+const STEP_TITLES: Record<Step, string> = {
+    store: 'Pilih Store',
+    info: 'Detail Pesanan',
+    menu: 'Pilih Menu',
+    review: 'Review Pesanan',
+    payment: 'Payment',
+};
+
+const emptyItem = (): OrderItem => ({ box_type: 'FULL', name: '', qty: 1, isExpanded: false });
+
+function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+}
+
+function formatSchedule(dateStr: string, timeStr: string) {
+    return `${formatDate(dateStr)}, ${timeStr.replace(':', '.')}`;
+}
+
+const DELIVERY_OPTIONS: { key: DeliveryMethod; label: string; desc: string; icon: any; hidden?: boolean }[] = [
+    { key: 'pickup', label: 'Ambil di Toko', desc: 'Pesanan diambil langsung di toko', icon: LuStore },
+    { key: 'customer_delivery', label: 'Kirim dengan Kurir', desc: 'Kurir dipesan oleh pelanggan', icon: LuTruck },
+    // Shown only when BITESHIP_ENABLED=true and the customer's number passes BITESHIP_WHITELIST (storeDeliveryAllowed).
+    { key: 'store_delivery', label: 'Store Delivery', desc: 'Toko yang mengirim ke customer', icon: LuMapPin },
+];
+
+function StepHeader({ title, onBack }: { title: string; onBack?: () => void }) {
+    return (
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-primary/10 bg-white sm:rounded-t-3xl">
+            {onBack ? (
+                <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-primary/5 text-primary shrink-0">
+                    <LuChevronLeft className="text-xl" />
+                </button>
+            ) : <div className="w-9 h-9 shrink-0" />}
+            <h1 className="flex-1 text-center text-base font-extrabold text-primary pr-9">{title}</h1>
+        </div>
+    );
+}
+
+export default function OrderPage() {
+    const [submitting, setSubmitting] = useState(false);
+    const [submittedOrder, setSubmittedOrder] = useState<any>(null);
+    // DOKU_PAYMENT=true on the backend: "Bayar Online" (DOKU checkout page) replaces QRIS.
+    const [dokuEnabled, setDokuEnabled] = useState(false);
+    // TRANSFER_PAYMENT=false on the backend hides bank transfer.
+    const [transferEnabled, setTransferEnabled] = useState(true);
+    // BITESHIP_ENABLED=true on the backend; whether this customer gets Store Delivery is checked by
+    // phone number against BITESHIP_WHITELIST (server-side).
+    const [biteshipEnabled, setBiteshipEnabled] = useState(false);
+    const [storeDeliveryAllowed, setStoreDeliveryAllowed] = useState(false);
+    const [step, setStep] = useState<Step>('store');
+    const [stores, setStores] = useState<any[]>([]);
+    const [selectedStore, setSelectedStore] = useState<any>(null);
+    const [errorMessage, setErrorMessage] = useState('');
+    const [showTimePicker, setShowTimePicker] = useState(false);
+    const [toast, setToast] = useState<{ title: string; body: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+    // Store Delivery: confirm address + pin → courier options from Biteship → customer picks one.
+    const [locationConfirmed, setLocationConfirmed] = useState(false);
+    const [courierOptions, setCourierOptions] = useState<DeliveryOption[] | null>(null);
+    const [courierLoading, setCourierLoading] = useState(false);
+    const [courierError, setCourierError] = useState('');
+    const [selectedCourier, setSelectedCourier] = useState<DeliveryOption | null>(null);
+    const resetDeliveryQuote = () => {
+        setLocationConfirmed(false);
+        setCourierOptions(null);
+        setCourierError('');
+        setSelectedCourier(null);
+    };
+
+    const showToast = (title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setToast({ title, body, type });
+        setTimeout(() => setToast(null), 3000);
+    };
+
+    const [form, setForm] = useState({
+        customer_name: '',
+        customer_phone: '',
+        pickup_date: '',
+        pickup_time: ':',
+        note: '',
+        payment_method: '' as '' | 'TRANSFER' | 'QRIS' | 'CASH' | 'DOKU',
+        pesanan: [emptyItem()],
+    });
+
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/payment/config`)
+            .then(json => {
+                if (json.status !== 'ok') return;
+                setDokuEnabled(!!json.data.doku_enabled);
+                setTransferEnabled(json.data.transfer_enabled !== false);
+                setBiteshipEnabled(!!json.data.biteship_enabled);
+            })
+            .catch(err => console.error('Gagal memuat konfigurasi pembayaran', err));
+    }, []);
+
+    // Delivery state
+    const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('pickup');
+    const [destLat, setDestLat] = useState<number | null>(null);
+    const [destLng, setDestLng] = useState<number | null>(null);
+    const [deliveryAddress, setDeliveryAddress] = useState('');
+    const [driverNote, setDriverNote] = useState('');
+    const [postalCode, setPostalCode] = useState<number | null>(null);
+    const [areaResults, setAreaResults] = useState<any[]>([]);
+    const [selectedArea, setSelectedArea] = useState<any>(null);
+    const [areaLoading, setAreaLoading] = useState(false);
+
+    const shippingFee = deliveryMethod === 'store_delivery' ? selectedCourier?.price ?? null : null;
+    // Store delivery: the date/time is when the store ships the order, not when it is picked up.
+    const isStoreDelivery = deliveryMethod === 'store_delivery';
+    const scheduleWord = isStoreDelivery ? 'Pengiriman' : 'Pengambilan';
+
+    // Store Delivery is offered only to whitelisted numbers; re-checked as the number is typed.
+    useEffect(() => {
+        const phone = form.customer_phone;
+        if (!biteshipEnabled || phone.length < 9) {
+            setStoreDeliveryAllowed(false);
+            return;
+        }
+        let cancelled = false;
+        const timeoutId = setTimeout(() => {
+            fetchJson(`${API_URL}/api/biteship/eligibility`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customer_phone: phone }),
+            })
+                .then(json => { if (!cancelled) setStoreDeliveryAllowed(json.status === 'ok' && !!json.data.store_delivery); })
+                .catch(() => { if (!cancelled) setStoreDeliveryAllowed(false); });
+        }, 400);
+        return () => { cancelled = true; clearTimeout(timeoutId); };
+    }, [biteshipEnabled, form.customer_phone]);
+
+    useEffect(() => {
+        if (!storeDeliveryAllowed && deliveryMethod === 'store_delivery') setDeliveryMethod('pickup');
+    }, [storeDeliveryAllowed, deliveryMethod]);
+
+    const [menus, setMenus] = useState<Menu[]>([]);
+    const [variants, setVariants] = useState<Variant[]>([]);
+    const [bestSellers, setBestSellers] = useState<{ variant_id: number; sold: number }[]>([]);
+    const [quotas, setQuotas] = useState<any[]>([]);
+    const [quotasLoading, setQuotasLoading] = useState(true);
+
+    // Fetch store list once on mount — customer picks a store before anything else
+    useEffect(() => {
+        fetchJson(`${API_URL}/api/stores`)
+            .then(json => {
+                if (json.status !== 'ok') return;
+                setStores(json.data);
+                // /pesan?store=<id> (from the storefront): that store, straight to the menu.
+                const wanted = Number(new URLSearchParams(window.location.search).get('store'));
+                const store = wanted ? json.data.find((s: { id: number }) => s.id === wanted) : null;
+                if (store) {
+                    setSelectedStore(store);
+                    setStep('menu');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showToast('❌ Error', 'Gagal memuat daftar store.', 'error');
+            });
+    }, []);
+
+    useEffect(() => {
+        if (!selectedStore) return;
+        let cancelled = false;
+        setQuotasLoading(true);
+        Promise.all([
+            fetchJson(`${API_URL}/api/menu?store_id=${selectedStore.id}`),
+            fetchJson(`${API_URL}/api/variants?store_id=${selectedStore.id}`),
+            fetchJson(`${API_URL}/api/daily-quota?store_id=${selectedStore.id}`),
+        ]).then(([mjson, vjson, qjson]) => {
+            if (cancelled) return;
+            if (mjson.status === 'ok') setMenus(mjson.data);
+            if (vjson.status === 'ok') setVariants(vjson.data);
+            if (qjson.status === 'ok') setQuotas(qjson.data);
+        }).catch(err => {
+            console.error(err);
+            if (!cancelled) showToast('❌ Error', 'Gagal memuat menu. Silakan refresh halaman.', 'error');
+        }).finally(() => { if (!cancelled) setQuotasLoading(false); });
+        // Gallery order + "Terlaris" badge; optional, so a failure just keeps the catalog order.
+        fetchJson(`${API_URL}/api/variants/best-sellers?store_id=${selectedStore.id}`)
+            .then(json => { if (!cancelled) setBestSellers(json.data ?? []); })
+            .catch(() => { if (!cancelled) setBestSellers([]); });
+        return () => { cancelled = true; };
+    }, [selectedStore]);
+
+    // Reverse geocode when pin dropped — fills address, extracts postal_code, auto-searches Biteship area
+    // Reverse geocoding: Google Geocoder from GoogleDeliveryMap, Nominatim for the Leaflet map.
+    const onMapClick = useCallback(async (lat: number, lng: number, reverseGeocode: ReverseGeocode = nominatimReverseGeocode) => {
+        setDestLat(lat);
+        setDestLng(lng);
+        // A new pin needs a new confirmation + courier check.
+        setLocationConfirmed(false);
+        setCourierOptions(null);
+        setCourierError('');
+        setSelectedCourier(null);
+        setSelectedArea(null);
+        setAreaResults([]);
+        try {
+            const found = await reverseGeocode(lat, lng);
+            const addr = found?.address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+            setDeliveryAddress(addr);
+
+            const pc = found?.postalCode ?? null;
+            setPostalCode(pc);
+
+            // Persist to localStorage
+            try {
+                localStorage.setItem('rpn_delivery_pin', JSON.stringify({
+                    lat, lng,
+                    postal_code: pc,
+                    address: addr,
+                    saved_at: new Date().toISOString(),
+                }));
+            } catch { /* localStorage not available */ }
+
+            // Auto-search Biteship areas using postal code
+            if (pc) {
+                setAreaLoading(true);
+                try {
+                    const aj = await fetchJson(`${API_URL}/api/biteship/areas?search=${pc}`);
+                    setAreaResults(aj.data ?? []);
+                } catch { setAreaResults([]); }
+                finally { setAreaLoading(false); }
+            }
+        } catch {
+            setDeliveryAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        }
+    }, []);
+
+    // Box types this store sells: active FULL/HALF menu rows (the menu list is already filtered by store).
+    const availableBoxes = BOX_TYPES.filter(bt => menus.some(m => m.name === bt && m.is_active !== false));
+
+    // A box costs its most expensive flavor at this store (the backend charges the same).
+    const priceOfItem = useCallback((item: { box_type: string; variant_ids?: number[] }) =>
+        boxPrice(variants, item.variant_ids ?? [], selectedStore?.id, item.box_type) ?? 0, [variants, selectedStore]);
+
+    // Flavors the gallery may offer: active and priced at this store for at least one sold box type.
+    const galleryVariants = variants.filter(v => v.is_active && availableBoxes.some(bt => flavorPrice(v, selectedStore?.id, bt) !== null));
+
+    /**
+     * "Pilih rasa ini" from the gallery, applied to the last item:
+     *  - no flavor yet → pick it there;
+     *  - box still has room (Box Besar up to its max) → choose: mix into that item, or a new item;
+     *  - box full / Box Kecil / already chosen → a new item with just this flavor.
+     */
+    const galleryPickOptions = (v: Variant): PickOption[] => {
+        const idx = form.pesanan.length - 1;
+        const item = form.pesanan[idx];
+        const sellsIn = (bt: string) => availableBoxes.includes(bt as BoxType) && flavorPrice(v, selectedStore?.id, bt) !== null;
+        const chosen = selectedVariants(item, variants);
+        const newItemBox = (sellsIn(item.box_type) ? item.box_type : availableBoxes.find(sellsIn)) as BoxType | undefined;
+
+        const addAsNewItem: PickOption = {
+            label: `Jadikan Item ${idx + 2}`,
+            run: () => {
+                setForm(f => ({ ...f, pesanan: [...f.pesanan.map(p => ({ ...p, isExpanded: false })), { ...emptyItem(), box_type: newItemBox ?? 'FULL', ...buildSelection([v]) }] }));
+                showToast('✅ Ditambahkan', `${v.variant_name} sebagai Item ${idx + 2}`, 'success');
+            },
+        };
+
+        if (chosen.length === 0) {
+            const box = sellsIn(item.box_type) ? item.box_type : newItemBox;
+            return [{
+                label: `Pilih untuk Item ${idx + 1}`,
+                run: () => {
+                    setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, box_type: box ?? p.box_type, ...buildSelection([v]) } : p) }));
+                    showToast('✅ Dipilih', `${v.variant_name} untuk Item ${idx + 1}`, 'success');
+                },
+            }];
+        }
+        if (chosen.some(c => c.id === v.id)) {
+            return [{ label: `Sudah dipilih di Item ${idx + 1}`, disabled: true }, addAsNewItem];
+        }
+        if (chosen.length < maxFlavorsFor(menus, item.box_type) && sellsIn(item.box_type)) {
+            return [{
+                label: `Campur ke Item ${idx + 1} (jadi ${chosen.length + 1} rasa)`,
+                run: () => {
+                    setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, ...buildSelection([...chosen, v]) } : p) }));
+                    showToast('✅ Dicampur', `Item ${idx + 1}: ${[...chosen, v].map(c => c.variant_name).join(' + ')}`, 'success');
+                },
+            }, addAsNewItem];
+        }
+        return [{ ...addAsNewItem, label: `Tambah sebagai Item ${idx + 2}` }];
+    };
+
+    // Items as POST /order receives them; also what the delivery quote is computed from.
+    const orderItemsPayload = useCallback(() => form.pesanan
+        .filter(p => p.name.trim().length > 0 && p.qty > 0)
+        .map(({ isExpanded: _isExpanded, ...item }) => ({ ...item, name: normalizeVariant(item.name), variant_ids: resolveVariantIds(item, variants) })),
+    [form.pesanan, variants]);
+
+    // A place picked from the address search: pin + address from Google, like a map tap.
+    const onSearchSelect = ({ lat, lng, address }: { lat: number; lng: number; address: string }) => {
+        setDestLat(lat);
+        setDestLng(lng);
+        setDeliveryAddress(address);
+        setSelectedArea(null);
+        setAreaResults([]);
+        resetDeliveryQuote();
+    };
+
+    // Changed items (back to the menu) change the fees — the courier must be checked again.
+    const itemsKey = JSON.stringify(orderItemsPayload());
+    useEffect(() => {
+        setLocationConfirmed(false);
+        setCourierOptions(null);
+        setCourierError('');
+        setSelectedCourier(null);
+    }, [itemsKey]);
+
+    /** "Konfirmasi alamat & titik lokasi": only then ask Biteship for the courier fees. */
+    const confirmLocation = async () => {
+        if (!destLat || !destLng) return fail('Silakan tandai lokasi di peta');
+        if (!deliveryAddress.trim()) return fail('Alamat pengiriman wajib diisi');
+        setErrorMessage('');
+        setLocationConfirmed(true);
+        setSelectedCourier(null);
+        setCourierOptions(null);
+        setCourierError('');
+        setCourierLoading(true);
+        try {
+            const json = await fetchJson(`${API_URL}/api/biteship/store-delivery-options`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    store_id: selectedStore?.id,
+                    pesanan: orderItemsPayload(),
+                    customer_phone: form.customer_phone,
+                    delivery_lat: destLat,
+                    delivery_lng: destLng,
+                }),
+            });
+            const options: DeliveryOption[] = json.status === 'ok' ? json.data : [];
+            setCourierOptions(options);
+            if (options.length === 0) setCourierError('Belum ada kurir yang tersedia ke lokasi ini. Coba geser titik lokasi atau pilih metode lain.');
+        } catch (err) {
+            setLocationConfirmed(false);
+            setCourierError(err instanceof Error ? err.message : 'Gagal mengecek ongkir. Silakan coba lagi.');
+        } finally {
+            setCourierLoading(false);
+        }
+    };
+
+    const filterPassedDates = (time: Date) => {
+        // Disable past dates automatically
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (time < today) return false;
+
+        const y = time.getFullYear(), m = String(time.getMonth() + 1).padStart(2, '0'), d = String(time.getDate()).padStart(2, '0');
+        if (quotasLoading) return true; // allow while loading
+        if (quotas.length === 0) return false; // gracefully disable all if truly empty
+        const q = quotas.find(q => q.date === `${y}-${m}-${d}`);
+        return q ? q.remaining_qty > 0 : false;
+    };
+
+    // Hourly slots with their remaining capacity for the chosen date & store.
+    const [availableHours, setAvailableHours] = useState<{ time_str: string; is_active: boolean; remaining_qty: number }[]>([]);
+    useEffect(() => {
+        if (!form.pickup_date || !selectedStore) {
+            setAvailableHours([]);
+            return;
+        }
+        let cancelled = false;
+        fetchJson(`${API_URL}/api/hourly-quota/availability?date=${form.pickup_date}&store_id=${selectedStore.id}`)
+            .then(json => { if (!cancelled && json.status === 'ok') setAvailableHours(json.data); })
+            .catch(() => { if (!cancelled) setAvailableHours([]); });
+        return () => { cancelled = true; };
+    }, [form.pickup_date, selectedStore]);
+
+    // No hourly slots configured = no hourly cap; see pickupHourOptions.
+    const hasHourlySlots = availableHours.length > 0;
+    const pickupHours = pickupHourOptions(availableHours, selectedStore);
+
+    const getIsHourAvailable = (hStr: string) => {
+        if (!form.pickup_date || !selectedStore) return false;
+        if (hStr < (selectedStore.open_time ?? '00:00')) return false;
+        if (!hasHourlySlots) return true;
+        const slot = availableHours.find(h => h.time_str === hStr && h.is_active);
+        if (!slot) return false;
+        // Box Kecil counts as 0.5 box, like the server-side check.
+        const requested = form.pesanan.reduce((sum, p) => sum + (p.name ? (p.box_type === 'HALF' ? p.qty * 0.5 : p.qty) : 0), 0);
+        return slot.remaining_qty >= Math.max(requested, 0.5);
+    };
+
+    const goToStep = (s: Step) => { setErrorMessage(''); setStep(s); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    const fail = (msg: string) => { setErrorMessage(msg); window.scrollTo({ top: 0, behavior: 'smooth' }); return false; };
+
+    const handleNextFromInfo = () => {
+        setErrorMessage('');
+        if (!form.customer_name.trim()) return fail('Nama Pelanggan wajib diisi');
+        if (!form.customer_phone.trim()) return fail('Nomor WhatsApp wajib diisi');
+        if (!form.pickup_date) return fail(`Tanggal ${scheduleWord} wajib diisi`);
+        const [hh, mm] = form.pickup_time.split(':');
+        if (!hh || !mm) return fail(`Waktu ${scheduleWord} wajib dipilih`);
+        if (deliveryMethod === 'store_delivery') {
+            if (!deliveryAddress.trim()) return fail('Alamat pengiriman wajib diisi');
+            if (!destLat || !destLng) return fail('Silakan tandai lokasi di peta');
+            if (!locationConfirmed) return fail('Konfirmasi alamat & titik lokasi terlebih dahulu');
+            if (!selectedCourier) return fail('Silakan pilih kurir pengiriman');
+        }
+        goToStep('review');
+    };
+
+    const handleNextFromMenu = () => {
+        setErrorMessage('');
+        const validItems = form.pesanan.filter(p => p.name.trim().length > 0 && p.qty > 0);
+        if (validItems.length === 0) return fail('Minimal 1 pesanan wajib diisi');
+        goToStep('info');
+    };
+
+    const submitOrder = async () => {
+        setErrorMessage('');
+        if (!selectedStore) return fail('Store belum dipilih');
+        if (!form.payment_method) return fail('Metode pembayaran wajib dipilih');
+        if (deliveryMethod === 'store_delivery' && !selectedCourier) return fail('Silakan pilih kurir pengiriman');
+        setSubmitting(true);
+        try {
+            const validItems = orderItemsPayload();
+
+            // Build note — plain now, delivery stored in separate columns
+            const noteStr = form.note.trim() || null;
+
+            const payload = {
+                ...form,
+                store_id: selectedStore?.id,
+                note: noteStr,
+                pesanan: validItems,
+                delivery_method: deliveryMethod,
+                delivery_lat: destLat,
+                delivery_lng: destLng,
+                delivery_address: deliveryAddress.trim() || null,
+                delivery_driver_note: driverNote.trim() || null,
+                // The backend re-quotes this courier and charges its current fee.
+                delivery_courier_company: deliveryMethod === 'store_delivery' ? selectedCourier?.courier_company : null,
+                delivery_courier_type: deliveryMethod === 'store_delivery' ? selectedCourier?.courier_type : null,
+            };
+
+            const json = await fetchJson(`${API_URL}/api/order`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (json.status === 'ok' && json.data.payment_url) {
+                // DOKU checkout: the customer pays there and comes back to /bukti-transfer/<token>.
+                window.location.href = json.data.payment_url;
+                return;
+            }
+            if (json.status === 'ok') {
+                // Payment instructions (transfer account, QRIS, cash) live on the status page.
+                if (json.data.public_token) {
+                    window.location.href = `/status/${json.data.public_token}`;
+                    return;
+                }
+                setSubmittedOrder(json.data);
+            } else {
+                fail(json.message || 'Gagal menyimpan pesanan');
+            }
+        } catch (err) {
+            fail(err instanceof Error ? err.message : 'Gagal menghubungi server');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const resetForm = () => {
+        setSubmittedOrder(null);
+        setStep(selectedStore ? 'menu' : 'store');
+        setForm({ customer_name: '', customer_phone: '', pickup_date: '', pickup_time: ':', note: '', payment_method: '', pesanan: [emptyItem()] });
+        setDeliveryMethod('pickup');
+        setDestLat(null); setDestLng(null); setDeliveryAddress(''); setDriverNote('');
+        setPostalCode(null); setAreaResults([]); setSelectedArea(null);
+        resetDeliveryQuote();
+    };
+
+    const itemsTotal = form.pesanan.reduce((sum, item) => sum + priceOfItem(item) * item.qty, 0);
+    const grandTotal = itemsTotal + (shippingFee || 0);
+
+    if (submittedOrder) {
+        return (
+            <div className="bg-brand-white font-display text-primary min-h-screen flex flex-col items-center justify-center p-4">
+                <div className="w-full max-w-[480px] bg-white rounded-3xl p-8 shadow-xl">
+                    <div className="text-center mb-6">
+                        <LuCheck className="text-6xl text-green-500 mx-auto mb-4" />
+                        <h2 className="text-2xl font-extrabold text-primary mb-2">Pesanan Dibuat!</h2>
+                        <p className="text-primary/70">Order <strong>#{submittedOrder.id}</strong> — {submittedOrder.customer_name}</p>
+                    </div>
+                    <div className="bg-primary/5 rounded-2xl p-4 mb-6 space-y-3 text-sm">
+                        {[
+                            { label: 'Status', value: submittedOrder.status },
+                            { label: 'Metode Bayar', value: submittedOrder.payment_method },
+                            submittedOrder.delivery_method === 'store_delivery'
+                                ? { label: 'Jadwal Pengiriman', value: formatSchedule(submittedOrder.pickup_date, submittedOrder.pickup_time) }
+                                : { label: 'Waktu Pengambilan', value: formatSchedule(submittedOrder.pickup_date, submittedOrder.pickup_time) },
+                        ].map(({ label, value }) => (
+                            <div key={label} className="flex justify-between border-b border-primary/10 pb-2">
+                                <span className="text-primary/50">{label}</span>
+                                <span className="font-bold text-primary">{value ?? '-'}</span>
+                            </div>
+                        ))}
+                        <div>
+                            <span className="text-[10px] font-black uppercase text-primary/40 block mb-2">Pesanan</span>
+                            {submittedOrder.items?.map((item: any, i: number) => (
+                                <div key={i} className="flex justify-between text-xs py-1">
+                                    <span className="text-primary/70">{item.qty}x {boxLabelID(item.box_type)} · {item.name}</span>
+                                    <span className="font-bold text-primary">Rp {itemSubtotal(item).toLocaleString('id-ID')}</span>
+                                </div>
+                            ))}
+                        </div>
+                        {Number(submittedOrder.delivery_fee) > 0 && (
+                            <div className="flex justify-between text-xs py-1">
+                                <span className="text-primary/70">Ongkir</span>
+                                <span className="font-bold text-primary">Rp {Number(submittedOrder.delivery_fee).toLocaleString('id-ID')}</span>
+                            </div>
+                        )}
+                        <div className="flex justify-between pt-2 border-t border-primary/10">
+                            <span className="font-black text-primary">Total</span>
+                            <span className="font-black text-primary">Rp {(orderTotal({ items: submittedOrder.items ?? [] }) + Number(submittedOrder.delivery_fee ?? 0)).toLocaleString('id-ID')}</span>
+                        </div>
+                    </div>
+                    {submittedOrder.payment_method === 'TRANSFER' && (
+                        <div className="mb-6 p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                            <p className="text-[10px] font-black uppercase text-primary/60 mb-3 text-center tracking-wider">
+                                Transfer ke Rekening Berikut
+                            </p>
+                            <div className="bg-white rounded-xl border border-primary/10 shadow-sm p-4 text-center space-y-1">
+                                {selectedStore?.bank_account_number ? (
+                                    <>
+                                        <p className="text-xs font-semibold text-primary/60">Bank {selectedStore.bank_name}</p>
+                                        <p className="text-xl font-extrabold text-primary tracking-wider">{selectedStore.bank_account_number}</p>
+                                        <p className="text-sm text-primary/70">a.n. {selectedStore.bank_account_name}</p>
+                                    </>
+                                ) : (
+                                    <p className="text-sm font-semibold text-primary/70">Nomor rekening akan dikirim admin via WhatsApp.</p>
+                                )}
+                            </div>
+                            <p className="text-xs text-primary/60 text-center mt-3">Kirim bukti transfer via WhatsApp untuk konfirmasi</p>
+                        </div>
+                    )}
+                    {submittedOrder.payment_method === 'QRIS' && (
+                        <div className="mb-6 p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                            <p className="text-[10px] font-black uppercase text-primary/60 mb-3 text-center tracking-wider">
+                                Scan QR untuk Bayar
+                            </p>
+                            <div className="flex justify-center bg-white p-2 rounded-xl border border-primary/10 shadow-sm">
+                                {selectedStore?.qris_image_url
+                                    ? <img src={selectedStore.qris_image_url} alt="QRIS Pembayaran" width={180} height={180} className="rounded-lg" />
+                                    : <p className="text-sm font-semibold text-primary/70 p-4 text-center">Kode QRIS akan dikirim admin via WhatsApp.</p>}
+                            </div>
+                            <p className="text-xs text-primary/60 text-center mt-3">Kirim bukti pembayaran via WhatsApp untuk konfirmasi</p>
+                        </div>
+                    )}
+                    {submittedOrder.payment_method === 'CASH' && (
+                        <div className="mb-6 p-4 bg-primary/5 rounded-2xl border border-primary/10 text-center">
+                            <p className="text-sm font-bold text-primary mb-1">Konfirmasi Pesanan via WhatsApp</p>
+                            <p className="text-xs text-primary/70">Pesanan akan dikonfirmasi lewat WhatsApp. Silakan datang ke toko sesuai jadwal:</p>
+                            <p className="text-sm font-extrabold text-primary mt-2">{formatSchedule(submittedOrder.pickup_date, submittedOrder.pickup_time)}</p>
+                        </div>
+                    )}
+                    <button onClick={resetForm} className="w-full py-3.5 bg-primary text-brand-yellow font-extrabold rounded-2xl shadow-lg">
+                        Buat Pesanan Baru
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-brand-white font-display text-primary min-h-dvh flex flex-col items-center p-0 sm:p-4 sm:py-8">
+            <div className="relative bg-white rounded-none sm:rounded-[28px] flex flex-col w-full max-w-[480px] min-h-dvh sm:min-h-fit shadow-2xl">
+                {step === 'store' || step === 'menu'
+                    ? <OrderBanner storeCount={stores.length} />
+                    : <div className="w-12 h-1 bg-primary/10 rounded-full mx-auto mt-3 sm:mt-4" />}
+
+                <StepHeader
+                    title={STEP_TITLES[step]}
+                    onBack={PREV_STEP[step] ? () => goToStep(PREV_STEP[step]!) : undefined}
+                />
+
+                <div className="flex-1 px-5 py-6 space-y-6">
+
+                    {errorMessage && (
+                        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm font-semibold animate-in fade-in slide-in-from-top-2">
+                            {errorMessage}
+                        </div>
+                    )}
+
+                    {step === 'store' && (
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Pilih Lokasi Store *</label>
+                            {stores.length === 0 && (
+                                <p className="text-xs text-primary/50 font-medium text-center py-6">Memuat daftar store...</p>
+                            )}
+                            {stores.map((s) => {
+                                const isSelected = selectedStore?.id === s.id;
+                                return (
+                                    <button key={s.id} onClick={() => setSelectedStore(s)}
+                                        className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all ${isSelected ? 'border-primary bg-primary text-brand-yellow' : 'border-primary/10 bg-primary/5 text-primary hover:border-primary/30'}`}>
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isSelected ? 'bg-brand-yellow/20' : 'bg-white/70'}`}>
+                                            <LuStore className={`text-lg ${isSelected ? 'text-brand-yellow' : 'text-primary/60'}`} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-sm font-extrabold ${isSelected ? 'text-brand-yellow' : 'text-primary'}`}>{s.name}</p>
+                                            <p className={`text-xs font-medium line-clamp-2 ${isSelected ? 'text-brand-yellow/70' : 'text-primary/50'}`}>{s.address}</p>
+                                        </div>
+                                        {isSelected && <LuCheck className="text-brand-yellow shrink-0" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {step === 'info' && (
+                        <>
+                            {/* Customer Name */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nama Pelanggan *</label>
+                                <div className="relative">
+                                    <input className="w-full h-11 pl-4 pr-10 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholder="Nama pemesan" autoCapitalize="words" value={form.customer_name} onChange={e => setForm(f => ({ ...f, customer_name: toTitleCase(e.target.value) }))} />
+                                    <LuUser className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
+                                </div>
+                            </div>
+
+                            {/* Customer Phone */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Nomor WhatsApp *</label>
+                                <div className="relative">
+                                    <input type="tel" className="w-full h-11 pl-4 pr-10 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholder="Contoh: 081234567890" value={form.customer_phone} onChange={e => setForm(f => ({ ...f, customer_phone: e.target.value.replace(/[^0-9]/g, '') }))} />
+                                    <LuPhone className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
+                                </div>
+                            </div>
+
+                            {/* Order Type */}
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">PENGAMBILAN / PENGIRIMAN *</label>
+                                <div className="space-y-2">
+                                    {DELIVERY_OPTIONS.filter(d => d.key === 'store_delivery' ? storeDeliveryAllowed : !d.hidden).map(({ key, label, desc, icon: Icon }) => {
+                                        const isSelected = deliveryMethod === key;
+                                        return (
+                                            <button key={key} onClick={() => setDeliveryMethod(key)}
+                                                className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all ${isSelected ? 'border-primary bg-primary text-brand-yellow' : 'border-primary/10 bg-primary/5 text-primary hover:border-primary/30'}`}>
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isSelected ? 'bg-brand-yellow/20' : 'bg-white/70'}`}>
+                                                    <Icon className={`text-lg ${isSelected ? 'text-brand-yellow' : 'text-primary/60'}`} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`text-sm font-extrabold ${isSelected ? 'text-brand-yellow' : 'text-primary'}`}>{label}</p>
+                                                    <p className={`text-xs font-medium ${isSelected ? 'text-brand-yellow/70' : 'text-primary/50'}`}>{desc}</p>
+                                                </div>
+                                                {isSelected && <LuCheck className="text-brand-yellow shrink-0" />}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Store Delivery — Map & Address Section */}
+                                {deliveryMethod === 'store_delivery' && (
+                                    <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <AddressSearch biasLat={selectedStore?.latitude} biasLng={selectedStore?.longitude} onSelect={onSearchSelect} />
+                                        <div className="rounded-2xl overflow-hidden border border-primary/10 shadow-md" style={{ height: 260 }}>
+                                            {USE_GOOGLE_MAP
+                                                ? <GoogleDeliveryMap originLat={selectedStore?.latitude} originLng={selectedStore?.longitude} destLat={destLat} destLng={destLng} onMapClick={onMapClick} />
+                                                : <LeafletMap originLat={selectedStore?.latitude} originLng={selectedStore?.longitude} destLat={destLat} destLng={destLng} onMapClick={onMapClick} />}
+                                        </div>
+
+                                        {destLat && destLng && (
+                                            <div className="flex items-start gap-2 bg-green-50 border border-green-200 rounded-xl p-3">
+                                                <LuMapPin className="text-green-600 mt-0.5 shrink-0" size={14} />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-[10px] font-black text-green-700 uppercase mb-0.5">Koordinat Dipilih</p>
+                                                    <p className="text-xs font-medium text-green-700">{destLat.toFixed(6)}, {destLng.toFixed(6)}</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!destLat && (
+                                            <p className="text-xs text-primary/50 font-medium text-center py-2">
+                                                <LuMapPin className="inline mr-1" size={12} />
+                                                Cari alamat di atas, atau tap peta untuk menentukan lokasi pengiriman
+                                            </p>
+                                        )}
+
+                                        {/* Delivery Address — auto-filled from pin */}
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-primary/60">Alamat Lengkap Pengiriman *</label>
+                                            <textarea rows={3} value={deliveryAddress} onChange={e => { setDeliveryAddress(e.target.value); resetDeliveryQuote(); }}
+                                                placeholder="Tap peta untuk mengisi otomatis, atau ketik manual..."
+                                                className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" />
+                                            <div className="flex items-start gap-2 bg-brand-yellow/20 border border-brand-yellow rounded-xl p-2.5">
+                                                <LuInfo className="text-primary mt-0.5 shrink-0" size={14} />
+                                                <p className="text-[11px] font-semibold text-primary leading-snug">
+                                                    Alamat dari peta bisa kurang tepat. Mohon cek dan lengkapi: nama jalan, nomor rumah, RT/RW, nama gedung/blok/lantai, dan patokan. Kurir mengantar ke titik di peta dan alamat ini.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Catatan untuk driver */}
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-primary/60">Catatan untuk Driver (opsional)</label>
+                                            <textarea rows={2} value={driverNote} onChange={e => setDriverNote(e.target.value)}
+                                                placeholder="Contoh: Jangan dikocok, paket mudah pecah..."
+                                                className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" />
+                                        </div>
+
+                                        {/* Konfirmasi lokasi → cek ongkir → pilih kurir */}
+                                        {!locationConfirmed ? (
+                                            <div className="pt-1 space-y-2">
+                                                <button type="button" onClick={confirmLocation} disabled={!destLat || !deliveryAddress.trim() || courierLoading}
+                                                    className="w-full py-3 rounded-2xl bg-primary text-brand-yellow text-sm font-extrabold shadow-md disabled:opacity-40 flex items-center justify-center gap-2 active:scale-[0.98] transition-all">
+                                                    <LuMapPin /> Konfirmasi Alamat & Titik Lokasi
+                                                </button>
+                                                {courierError && <p className="text-xs text-red-600 font-semibold text-center">{courierError}</p>}
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2 pt-1">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[10px] font-black uppercase text-primary/60">Pilih Kurir *</label>
+                                                    <button type="button" onClick={resetDeliveryQuote} className="text-[10px] font-bold text-primary underline">Ubah lokasi</button>
+                                                </div>
+                                                {courierLoading && (
+                                                    <p className="text-xs text-primary/60 font-medium text-center py-3 flex items-center justify-center gap-2">
+                                                        <LuRefreshCw className="animate-spin" size={12} /> Mengecek ongkir...
+                                                    </p>
+                                                )}
+                                                {courierError && <p className="text-xs text-red-600 font-semibold">{courierError}</p>}
+                                                {courierOptions?.map(o => {
+                                                    const isSelected = selectedCourier?.courier_company === o.courier_company && selectedCourier?.courier_type === o.courier_type;
+                                                    const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`;
+                                                    return (
+                                                        <button key={`${o.courier_company}-${o.courier_type}`} type="button" onClick={() => setSelectedCourier(o)}
+                                                            className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all ${isSelected ? 'border-primary bg-primary text-brand-yellow' : 'border-primary/10 bg-primary/5 text-primary hover:border-primary/30'}`}>
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="min-w-0">
+                                                                    <p className="text-sm font-extrabold">{o.courier_name} · {o.service_name}</p>
+                                                                    <p className={`text-xs font-medium ${isSelected ? 'text-brand-yellow/70' : 'text-primary/50'}`}>Estimasi {o.duration ?? '-'}</p>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 shrink-0">
+                                                                    <p className="text-sm font-black">{rp(o.price)}</p>
+                                                                    {isSelected && <LuCheck />}
+                                                                </div>
+                                                            </div>
+                                                            <div className={`mt-2 pt-2 border-t space-y-0.5 text-[11px] font-medium ${isSelected ? 'border-brand-yellow/20 text-brand-yellow/80' : 'border-primary/10 text-primary/60'}`}>
+                                                                <div className="flex justify-between"><span>Ongkos kirim</span><span>{rp(o.shipping_fee)}</span></div>
+                                                                {o.shipping_fee_discount > 0 && <div className="flex justify-between"><span>Diskon</span><span>- {rp(o.shipping_fee_discount)}</span></div>}
+                                                                {o.shipping_fee_surcharge > 0 && <div className="flex justify-between"><span>Biaya tambahan</span><span>{rp(o.shipping_fee_surcharge)}</span></div>}
+                                                                <div className="flex justify-between font-bold"><span>Total ongkir</span><span>{rp(o.price)}</span></div>
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                                <p className="text-[10px] text-primary/40 font-medium text-center">Kurir dipesan saat pesanan siap dikirim.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Pickup Date & Time (store delivery: when the store ships it) */}
+                            {isStoreDelivery && (
+                                <p className="text-[11px] font-medium text-primary/60 -mb-3">
+                                    Pilih waktu pesanan dikirim dari toko. Kurir dipesan saat pesanan siap; lama perjalanan sesuai estimasi kurir.
+                                </p>
+                            )}
+                            <div className="flex gap-3">
+                                <div className="flex-1 space-y-1.5 flex flex-col">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Tanggal {scheduleWord} *</label>
+                                    <div className="flex-1 min-h-[44px]">
+                                        <DatePicker selected={form.pickup_date ? new Date(`${form.pickup_date}T00:00:00`) : null} onChange={(date: Date | null) => { if (date) { const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); setForm(f => ({ ...f, pickup_date: local.toISOString().split('T')[0] })); } }} filterDate={filterPassedDates} dateFormat="dd/MM/yyyy" className="w-full h-11 px-4 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30" placeholderText="Pilih Tanggal" disabled={!quotasLoading && quotas.length === 0} />
+                                    </div>
+                                </div>
+                                <div className="w-36 space-y-1.5 relative">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Waktu {scheduleWord}*</label>
+                                    <button type="button" disabled={!quotasLoading && quotas.length === 0} onClick={() => setShowTimePicker(!showTimePicker)} className="w-full h-11 px-4 flex items-center justify-center gap-1 rounded-xl border-2 border-primary/10 bg-primary/5 disabled:opacity-50 hover:bg-primary/10 transition-colors text-primary text-sm font-extrabold focus:outline-none focus:border-primary/30">
+                                        <span>{form.pickup_time.split(':')[0] || '--'}</span>
+                                        <span className="opacity-50">:</span>
+                                        <span>{form.pickup_time.split(':')[1] || '--'}</span>
+                                        <LuChevronDown className={`ml-auto transition-transform ${showTimePicker ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    {showTimePicker && (
+                                        <>
+                                            <div className="fixed inset-0 z-10" onClick={() => setShowTimePicker(false)} />
+                                            <div className="absolute top-[calc(100%+8px)] right-0 w-48 bg-white rounded-2xl shadow-2xl border-2 border-primary/5 z-20 flex overflow-hidden animate-in zoom-in-95 duration-200">
+                                                <div className="flex-1 border-r border-primary/5 max-h-56 overflow-y-auto">
+                                                    <div className="sticky top-0 bg-white/90 backdrop-blur pb-2 pt-3"><div className="text-[10px] font-black uppercase text-primary/40 text-center">Jam</div></div>
+                                                    <div className="p-1.5 space-y-0.5">
+                                                        {pickupHours.length === 0 && <p className="text-[11px] text-primary/50 text-center p-2">Belum ada jam tersedia</p>}
+                                                        {pickupHours.map(hDisplay => {
+                                                            const isSelected = form.pickup_time.split(':')[0] === hDisplay;
+                                                            const isAvail = getIsHourAvailable(hDisplay + ':00');
+                                                            return (
+                                                                <button key={hDisplay} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: withPickupHour(hDisplay, f.pickup_time, selectedStore) })); }}
+                                                                    className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail ? 'opacity-30 cursor-not-allowed' : isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>
+                                                                    {hDisplay}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1 max-h-56 overflow-y-auto">
+                                                    <div className="sticky top-0 bg-white/90 backdrop-blur pb-2 pt-3"><div className="text-[10px] font-black uppercase text-primary/40 text-center">Menit</div></div>
+                                                    <div className="p-1.5 space-y-0.5">
+                                                        {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(m => {
+                                                            const isSelected = form.pickup_time.split(':')[1] === m;
+                                                            const hDisplay = form.pickup_time.split(':')[0];
+                                                            // Pick an hour first.
+                                                            const isAvail = !!hDisplay && isPickupMinuteAllowed(hDisplay, m, selectedStore);
+                                                            return (
+                                                                <button key={m} type="button" disabled={!isAvail} onClick={() => { setForm(f => ({ ...f, pickup_time: `${hDisplay}:${m}` })); }}
+                                                                    className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${!isAvail ? 'opacity-30 cursor-not-allowed' : isSelected ? 'bg-primary text-brand-yellow' : 'text-primary/70 hover:bg-primary/5'}`}>
+                                                                    {m}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {!quotasLoading && quotas.length === 0 && (
+                                <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 animate-in fade-in zoom-in-95">
+                                    <LuInfo className="text-red-600 mt-0.5 shrink-0" size={16} />
+                                    <p className="text-xs font-bold text-red-700 leading-tight">Mohon maaf, kuota pemesanan saat ini sedang penuh atau tutup. Silahkan coba lagi nanti.</p>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {step === 'menu' && (
+                        <>
+                            <FlavorGallery variants={galleryVariants} bestSellers={bestSellers} pickOptions={galleryPickOptions} />
+
+                            {/* Pesanan */}
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Pesanan *</label>
+                                {form.pesanan.map((item, idx) => (
+                                    <div key={idx} className="bg-primary/5 rounded-2xl p-4 space-y-3">
+                                        <div className="flex justify-between items-center pb-2 border-b border-primary/5">
+                                            <span className="text-[11px] font-black uppercase text-primary/60 tracking-widest">Item {idx + 1}</span>
+                                            {form.pesanan.length > 1 && (
+                                                <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.filter((_, i) => i !== idx) }))} className="text-[10px] font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-lg hover:bg-red-100 flex items-center gap-1">
+                                                    <LuTrash2 /> Hapus Item
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex gap-2 flex-1">
+                                                {availableBoxes.map(bt => {
+                                                    const isSelected = item.box_type === bt;
+                                                    const priceStr = priceRangeLabel(variants.filter(v => v.is_active), selectedStore?.id, bt) ?? '...';
+                                                    const Icon = bt === 'HALF' ? LuLayoutTemplate : LuLayoutGrid;
+                                                    return (
+                                                        <button key={bt} onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => { if (i !== idx) return p; if (p.box_type === bt) return p; return { ...p, box_type: bt, name: '', variant_ids: [] }; }) }))}
+                                                            className={`flex-1 min-w-[65px] rounded-xl p-2.5 flex flex-col items-center relative transition-all shadow-sm border-2 ${isSelected ? 'bg-white border-blue-600' : 'bg-white/50 border-primary/10 opacity-70 hover:opacity-100'}`}>
+                                                            {isSelected && <div className="absolute -top-1.5 -right-1.5 bg-blue-600 rounded-full h-4 w-4 flex items-center justify-center shadow-sm"><LuCheck className="text-[10px] text-white stroke-[3]" /></div>}
+                                                            <Icon className={`text-[22px] mb-1.5 ${isSelected ? 'text-primary' : 'text-primary/40'}`} />
+                                                            <span className={`text-[10px] font-black uppercase tracking-tight leading-none ${isSelected ? 'text-primary' : 'text-primary/60'}`}>{bt}</span>
+                                                            <span className={`text-[9px] font-medium mt-1 ${isSelected ? 'text-primary/70' : 'text-primary/40'}`}>{priceStr}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 bg-white rounded-xl border-2 border-primary/10 px-1 py-1 shadow-sm shrink-0">
+                                                <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: Math.max(1, p.qty - 1) } : p) }))} className="text-primary font-black text-sm w-7 h-9 flex items-center justify-center hover:bg-black/5 rounded-lg">−</button>
+                                                <span className="text-[13px] font-black text-primary min-w-[16px] text-center">{item.qty}</span>
+                                                <button onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, qty: p.qty + 1 } : p) }))} className="text-primary font-black text-sm w-7 h-9 flex items-center justify-center hover:bg-black/5 rounded-lg">+</button>
+                                            </div>
+                                        </div>
+                                        <div className="pt-2">
+                                            <div className="flex flex-col gap-2">
+                                                {/* Toggle Collapse Button */}
+                                                <button
+                                                    onClick={() => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, isExpanded: !p.isExpanded } : p) }))}
+                                                    className="flex flex-col w-full text-left bg-white border-2 border-primary/10 rounded-xl p-3 hover:border-primary/30 transition-all shadow-sm"
+                                                >
+                                                    <div className="flex justify-between items-center w-full">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-primary/60">
+                                                            Pilih Rasa (Max {maxFlavorsFor(menus, item.box_type)} Rasa)
+                                                        </span>
+                                                        <LuChevronDown className={`text-primary/40 transition-transform duration-200 ${item.isExpanded ? 'rotate-180' : ''}`} />
+                                                    </div>
+
+                                                    {/* Preview selected flavors when collapsed */}
+                                                    {!item.isExpanded && (
+                                                        <div className="mt-1.5">
+                                                            {item.name ? (
+                                                                <span className="text-sm font-bold text-primary line-clamp-2">{item.name}</span>
+                                                            ) : (
+                                                                <span className="text-xs font-semibold text-red-500">* Pilih minimal 1 rasa</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </button>
+
+                                                {/* Collapsible Content */}
+                                                <div className={`transition-all duration-300 overflow-hidden ${item.isExpanded ? 'opacity-100 max-h-[1500px] mt-1' : 'opacity-0 max-h-0'}`}>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <FlavorPicker
+                                                            name={item.name}
+                                                            variantIds={item.variant_ids}
+                                                            variants={variants}
+                                                            maxFlavors={maxFlavorsFor(menus, item.box_type)}
+                                                            storeId={selectedStore?.id}
+                                                            boxType={item.box_type}
+                                                            onChange={sel => setForm(f => ({ ...f, pesanan: f.pesanan.map((p, i) => i === idx ? { ...p, ...sel } : p) }))}
+                                                        />
+                                                    </div>
+                                                    {!item.name && item.isExpanded && <p className="text-[10px] text-red-500 font-bold mt-3">* Silahkan pilih minimal 1 rasa</p>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                <button
+                                    onClick={() => setForm(f => ({ ...f, pesanan: [...f.pesanan.map(p => ({ ...p, isExpanded: false })), emptyItem()] }))}
+                                    className="flex items-center justify-center gap-1.5 w-full py-3 text-[11px] font-black text-primary bg-primary/10 rounded-2xl hover:bg-primary/20 transition-colors"
+                                >
+                                    <LuPlus className="text-sm" /> Tambah Item
+                                </button>
+                            </div>
+
+                            {/* Catatan Pesanan */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Catatan Pesanan (opsional)</label>
+                                <textarea rows={3} className="w-full px-4 py-3 rounded-xl border-2 border-primary/10 bg-primary/5 text-primary text-sm font-medium focus:outline-none focus:border-primary/30 resize-none" placeholder="Tambahkan catatan pesanan..." value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+                            </div>
+                        </>
+                    )}
+
+                    {step === 'review' && (
+                        <>
+                            {/* Store Delivery: last look at the pin + address before paying; "Ubah" goes back to fix it. */}
+                            {deliveryMethod === 'store_delivery' && destLat && destLng && (() => {
+                                const snapshot = staticMapUrl(destLat, destLng);
+                                return (
+                                    <div className="bg-primary/5 rounded-2xl overflow-hidden text-sm">
+                                        {snapshot && (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={snapshot} alt="Titik lokasi pengiriman" className="w-full h-40 object-cover" loading="lazy" />
+                                        )}
+                                        <div className="p-4 space-y-2">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="text-[10px] font-black uppercase text-primary/60">Lokasi Pengiriman</span>
+                                                <button onClick={() => goToStep('info')} className="text-[10px] font-bold text-primary underline">Ubah</button>
+                                            </div>
+                                            <p className="font-bold text-primary leading-snug">{deliveryAddress}</p>
+                                            {driverNote.trim() && <p className="text-xs text-primary/60">Catatan driver: {driverNote.trim()}</p>}
+                                            {selectedCourier && (
+                                                <div className="flex justify-between pt-2 border-t border-primary/10 text-xs">
+                                                    <span className="text-primary/60">Kurir: <span className="font-bold text-primary">{selectedCourier.courier_name} · {selectedCourier.service_name}</span>{selectedCourier.duration ? ` (${selectedCourier.duration})` : ''}</span>
+                                                    <span className="font-bold text-primary whitespace-nowrap">Rp {selectedCourier.price.toLocaleString('id-ID')}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            <div className="bg-primary/5 rounded-2xl p-4 space-y-3 text-sm">
+                                {[
+                                    { label: 'Nama', value: form.customer_name },
+                                    { label: 'No. WhatsApp', value: form.customer_phone },
+                                    isStoreDelivery
+                                        ? { label: 'Jadwal Pengiriman', value: formatSchedule(form.pickup_date, form.pickup_time) }
+                                        : { label: 'Waktu Pengambilan', value: formatSchedule(form.pickup_date, form.pickup_time) },
+                                    isStoreDelivery
+                                        ? { label: 'Pengiriman', value: 'Dikirim oleh toko' }
+                                        : { label: 'Metode Pengambilan', value: DELIVERY_OPTIONS.find(d => d.key === deliveryMethod)?.label },
+                                ].map(({ label, value }) => (
+                                    <div key={label} className="flex justify-between border-b border-primary/10 pb-2 gap-4">
+                                        <span className="text-primary/50 shrink-0">{label}</span>
+                                        <span className="font-bold text-primary text-right">{value || '-'}</span>
+                                    </div>
+                                ))}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] font-black uppercase text-primary/60">Pesanan Anda</span>
+                                        <button onClick={() => goToStep('menu')} className="text-[10px] font-bold text-primary underline">Edit Pesanan</button>
+                                    </div>
+                                    {form.pesanan.filter(p => p.name.trim().length > 0 && p.qty > 0).map((item, idx) => {
+                                        const price = priceOfItem(item);
+                                        return (
+                                            <div key={idx} className="flex justify-between items-start gap-3 py-1">
+                                                <div>
+                                                    <div className="font-bold text-primary">{item.qty}x {boxLabelID(item.box_type)}</div>
+                                                    <div className="text-xs text-primary/70">{normalizeVariant(item.name)}</div>
+                                                </div>
+                                                <div className="font-bold text-primary whitespace-nowrap">Rp {(price * item.qty).toLocaleString('id-ID')}</div>
+                                            </div>
+                                        );
+                                    })}
+                                    {menus.length > 0 && (
+                                        <>
+                                            {deliveryMethod === 'store_delivery' && selectedCourier && (
+                                                <div className="flex justify-between items-start gap-3 py-1 mt-1 text-primary/80">
+                                                    <div className="text-xs">Ongkir ({selectedCourier.courier_name} · {selectedCourier.service_name})</div>
+                                                    <div className="font-bold whitespace-nowrap">Rp {selectedCourier.price.toLocaleString('id-ID')}</div>
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between pt-3 border-t border-primary/10 mt-2">
+                                                <span className="font-black text-primary">Total Pesanan</span>
+                                                <span className="font-black text-primary text-lg">Rp {grandTotal.toLocaleString('id-ID')}</span>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {step === 'payment' && (
+                        <>
+                            {/* Payment Method */}
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-primary/60">Metode Pembayaran *</label>
+                                <div className="space-y-2">
+                                    {([
+                                        { key: 'TRANSFER', label: 'Transfer', desc: 'Lakukan transfer dan konfirmasi pembayaran via WA' },
+                                        { key: 'QRIS', label: 'QRIS', desc: 'Bayar menggunakan QRIS dan konfirmasi pembayaran via WA' },
+                                        { key: 'DOKU', label: 'QRIS', desc: 'Bayar QRIS online, status pembayaran terkonfirmasi otomatis' },
+                                        { key: 'CASH', label: 'Tunai', desc: 'Bayar tunai saat pengambilan' },
+                                    ] as const).filter(({ key }) =>
+                                        // DOKU takes QRIS's place while DOKU_PAYMENT is on.
+                                        key === 'QRIS' ? !dokuEnabled && !!selectedStore?.qris_image_url
+                                            : key === 'DOKU' ? dokuEnabled
+                                                : key === 'TRANSFER' ? transferEnabled
+                                                    : true
+                                    ).map(({ key, label, desc }) => {
+                                        const isSelected = form.payment_method === key;
+                                        return (
+                                            <button key={key} onClick={() => setForm(f => ({ ...f, payment_method: key }))}
+                                                className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all ${isSelected ? 'border-primary bg-primary text-brand-yellow' : 'border-primary/10 bg-primary/5 text-primary hover:border-primary/30'}`}>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`text-sm font-extrabold ${isSelected ? 'text-brand-yellow' : 'text-primary'}`}>{label}</p>
+                                                    <p className={`text-xs font-medium ${isSelected ? 'text-brand-yellow/70' : 'text-primary/50'}`}>{desc}</p>
+                                                </div>
+                                                {isSelected && <LuCheck className="text-brand-yellow shrink-0" />}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="bg-primary/5 rounded-2xl p-4 flex justify-between items-center">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Total Pembayaran</span>
+                                <span className="text-xl font-extrabold text-primary">Rp {grandTotal.toLocaleString('id-ID')}</span>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Total Estimasi — shown on menu step only */}
+                    {step === 'menu' && menus.length > 0 && (
+                        <div className="pt-2">
+                            <div className="flex justify-between items-end">
+                                <div><span className="text-[10px] font-black uppercase tracking-wider text-primary/60">Estimasi Total</span></div>
+                                <span className="text-xl font-extrabold text-primary">Rp {itemsTotal.toLocaleString('id-ID')}</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer per step */}
+                <div className="px-5 py-5 border-t border-primary/10 bg-white sm:rounded-b-3xl mt-auto">
+                    {step === 'store' && (
+                        <button onClick={() => selectedStore ? goToStep('menu') : fail('Silakan pilih store terlebih dahulu')} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
+                            <span>Lanjut</span>
+                            <LuArrowRight />
+                        </button>
+                    )}
+                    {step === 'info' && (
+                        <button onClick={handleNextFromInfo} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
+                            <span>Lanjut ke Review Pesanan</span>
+                            <LuArrowRight />
+                        </button>
+                    )}
+                    {step === 'menu' && (
+                        <button onClick={handleNextFromMenu} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
+                            <span>Lanjut ke Detail Pelanggan</span>
+                            <LuArrowRight />
+                        </button>
+                    )}
+                    {step === 'review' && (
+                        <button onClick={() => goToStep('payment')} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all py-3.5 flex items-center justify-center gap-2">
+                            <span>Lanjutkan Pembayaran</span>
+                            <LuArrowRight />
+                        </button>
+                    )}
+                    {step === 'payment' && (
+                        <button onClick={submitOrder} disabled={submitting} className="w-full h-13 bg-primary text-brand-yellow font-extrabold text-[15px] rounded-2xl shadow-lg hover:shadow-xl active:scale-[0.98] transition-all disabled:opacity-50 py-3.5">
+                            {submitting ? 'Memproses...' : form.payment_method === 'DOKU' ? 'Buat Pesanan & Bayar' : 'Buat Pesanan'}
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Toast */}
+            {toast && (
+                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
+                    <div className={`shadow-xl rounded-2xl p-4 flex items-start gap-3 w-80 max-w-[90vw] ${toast.type === 'success' ? 'bg-green-500 text-white' : toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-primary text-brand-yellow'}`}>
+                        <div className="flex-1"><h4 className="font-bold text-sm mb-0.5">{toast.title}</h4><p className="text-xs opacity-90">{toast.body}</p></div>
+                        <button onClick={() => setToast(null)} className="p-1 hover:bg-black/10 rounded-lg"><MdClose className="text-lg" /></button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
