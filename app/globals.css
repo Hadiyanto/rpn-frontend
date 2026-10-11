@@ -15,13 +15,22 @@
   --color-background-light: #F6FAF7;
   --color-background-dark: #101922;
 
-  --font-display: var(--font-public-sans);
-  --font-sans: var(--font-public-sans);
+  /* Body text (font-sans / font-display: the class pages put on their wrapper). */
+  --font-display: var(--font-assistant);
+  --font-sans: var(--font-assistant);
+  /* Headings: font-heading, and h1–h3 by default. */
+  --font-heading: var(--font-archivo);
+  /* Labels, badges, small prices. */
+  --font-mono: var(--font-space-mono);
 }
 
 body {
-  font-family: var(--font-public-sans), sans-serif;
+  font-family: var(--font-assistant), sans-serif;
   min-height: 100vh;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-archivo), sans-serif;
 }
 /* Horizontally scrolling chip/tab rows: keep them swipeable but hide the scrollbar. */
 @utility scrollbar-hide {

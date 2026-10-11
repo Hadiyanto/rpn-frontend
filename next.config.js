@@ -15,15 +15,6 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 const nextConfig = {
   // Self-contained server in .next/standalone for the Docker image (VPS); Vercel ignores it.
   output: "standalone",
-  async redirects() {
-    return [
-      {
-        source: "/pesan",
-        destination: "/",
-        permanent: false,
-      },
-    ];
-  },
   async rewrites() {
     return [
       {

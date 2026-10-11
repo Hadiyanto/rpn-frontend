@@ -10,7 +10,7 @@ import { Card, Field, SectionHeader, StickyActions, buttonPrimary, inputClass } 
 
 type Notify = (title: string, message: string, type: 'success' | 'error') => void;
 
-type Form = Record<'name' | 'address' | 'phone' | 'latitude' | 'longitude' | 'area_id' | 'open_time' | 'last_pickup_time' | 'bank_name' | 'bank_account_number' | 'bank_account_name' | 'qris_image_url' | 'labor_target_boxes' | 'labor_reference_store_id', string>;
+type Form = Record<'name' | 'address' | 'phone' | 'latitude' | 'longitude' | 'area_id' | 'open_time' | 'last_pickup_time' | 'bank_name' | 'bank_account_number' | 'bank_account_name' | 'qris_image_url' | 'maps_url' | 'labor_target_boxes' | 'labor_reference_store_id', string>;
 
 const toForm = (s: Store): Form => ({
     name: s.name ?? '',
@@ -25,6 +25,7 @@ const toForm = (s: Store): Form => ({
     bank_account_number: s.bank_account_number ?? '',
     bank_account_name: s.bank_account_name ?? '',
     qris_image_url: s.qris_image_url ?? '',
+    maps_url: s.maps_url ?? '',
     labor_target_boxes: String(s.labor_target_boxes ?? 30),
     labor_reference_store_id: s.labor_reference_store_id ? String(s.labor_reference_store_id) : '',
 });
@@ -74,6 +75,7 @@ export default function StoreSettings({ store, stores = [], onSaved, notify }: {
                     bank_account_number: orNull(form.bank_account_number),
                     bank_account_name: orNull(form.bank_account_name),
                     qris_image_url: orNull(form.qris_image_url),
+                    maps_url: orNull(form.maps_url),
                     labor_target_boxes: Number(form.labor_target_boxes) || 30,
                     labor_reference_store_id: form.labor_reference_store_id ? Number(form.labor_reference_store_id) : null,
                 }),
@@ -104,6 +106,9 @@ export default function StoreSettings({ store, stores = [], onSaved, notify }: {
                         <Field label="Latitude"><input id="store-lat" className={inputClass} value={form.latitude} onChange={set('latitude')} placeholder="-6.26" /></Field>
                         <Field label="Longitude"><input id="store-lng" className={inputClass} value={form.longitude} onChange={set('longitude')} placeholder="106.84" /></Field>
                     </div>
+                    <Field label="Link Google Maps" hint="Link halaman toko di Google Maps (Bagikan → Salin link). Dipakai di WhatsApp & beranda; kosong = dari latitude/longitude">
+                        <input id="store-maps-url" className={inputClass} value={form.maps_url} onChange={set('maps_url')} placeholder="https://maps.app.goo.gl/…" inputMode="url" />
+                    </Field>
                     <Field label="Biteship area ID" hint="Wajib untuk pengiriman oleh toko"><input id="store-area" className={inputClass} value={form.area_id} onChange={set('area_id')} /></Field>
                 </Card>
 

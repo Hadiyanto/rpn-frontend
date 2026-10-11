@@ -32,7 +32,11 @@ export async function middleware(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
 
     const { pathname } = request.nextUrl;
-    const isPublic = pathname === '/' || pathname === '/login' || pathname.startsWith('/bukti-transfer') || pathname.startsWith('/demo');
+    // Customer pages (storefront, order form, order status) + PWA assets are public; the rest is admin.
+    const isPublic = pathname === '/' || pathname === '/login' || pathname === '/pesan'
+        || pathname.startsWith('/status/') || pathname.startsWith('/bukti-transfer/')
+        || pathname === '/sw.js' || pathname.startsWith('/js/') || pathname.startsWith('/json/')
+        || /^\/(workbox|swe-worker)-/.test(pathname);
 
     // Sudah login + akses halaman login → ke /orders
     if (user && pathname === '/login') {

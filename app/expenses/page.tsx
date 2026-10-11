@@ -30,7 +30,7 @@ export default function ExpensesPage() {
             <div className="relative flex min-h-screen w-full max-w-[480px] flex-col bg-brand-white shadow-2xl">
                 <header className="sticky top-0 z-50 bg-brand-white border-b border-primary/10">
                     <div className="flex items-center p-4 justify-between w-full">
-                        <Link href="/" className="text-primary flex size-10 shrink-0 items-center justify-center cursor-pointer">
+                        <Link href="/orders" className="text-primary flex size-10 shrink-0 items-center justify-center cursor-pointer">
                             <LuChevronLeft className="text-2xl font-bold" />
                         </Link>
                         <h1 className="text-primary text-lg font-extrabold leading-tight tracking-[-0.015em] flex-1 text-center uppercase">Input Pengeluaran</h1>
