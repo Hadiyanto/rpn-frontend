@@ -65,7 +65,22 @@ interface Order {
     items: OrderItem[];
     store_id: number | null;
     biteship_order_id?: string | null;
+    delivery_method?: string | null;
+    /** Store delivery fee quoted at order creation (Postgres numeric → arrives as string). */
+    delivery_fee?: number | string | null;
+    delivery_courier_company?: string | null;
+    delivery_courier_type?: string | null;
+    delivery_address?: string | null;
+    delivery_driver_note?: string | null;
+    delivery_lat?: number | string | null;
+    delivery_lng?: number | string | null;
 }
+
+const DELIVERY_METHOD_LABELS: Record<string, string> = {
+    pickup: 'Ambil di Toko',
+    customer_delivery: 'Kurir Pelanggan',
+    store_delivery: 'Store Delivery',
+};
 
 const DAY_ID: Record<number, string> = {
     0: 'Minggu', 1: 'Senin', 2: 'Selasa', 3: 'Rabu', 4: 'Kamis', 5: 'Jumat', 6: 'Sabtu',
@@ -836,6 +851,47 @@ export default function OrdersPage() {
                                             <span className="text-primary/50">Total Harga</span>
                                             <span className="font-bold text-primary">Rp {orderTotal(order).toLocaleString('id-ID')}</span>
                                         </div>
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-primary/50">Metode Pengiriman</span>
+                                            <span className="font-bold text-primary text-right">
+                                                {DELIVERY_METHOD_LABELS[order.delivery_method ?? 'pickup'] ?? order.delivery_method}
+                                                {order.delivery_courier_company && (
+                                                    <span className="text-primary/50 font-medium uppercase">
+                                                        {' '}· {order.delivery_courier_company}{order.delivery_courier_type ? ` ${order.delivery_courier_type}` : ''}
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </div>
+                                        {order.delivery_fee !== null && order.delivery_fee !== undefined && (
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-primary/50">Ongkos Kirim</span>
+                                                <span className="font-bold text-primary">Rp {Number(order.delivery_fee).toLocaleString('id-ID')}</span>
+                                            </div>
+                                        )}
+                                        {order.delivery_method === 'store_delivery' && order.delivery_address && (
+                                            <div className="flex justify-between gap-4 text-xs">
+                                                <span className="text-primary/50 shrink-0">Alamat</span>
+                                                <span className="font-bold text-primary text-right">
+                                                    {order.delivery_address}
+                                                    {order.delivery_lat && order.delivery_lng && (
+                                                        <a
+                                                            href={`https://www.google.com/maps?q=${order.delivery_lat},${order.delivery_lng}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="block text-primary/50 font-medium underline hover:text-primary"
+                                                        >
+                                                            Buka di Maps
+                                                        </a>
+                                                    )}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {order.delivery_method === 'store_delivery' && order.delivery_driver_note && (
+                                            <div className="flex justify-between gap-4 text-xs">
+                                                <span className="text-primary/50 shrink-0">Catatan Driver</span>
+                                                <span className="font-medium italic text-primary/70 text-right">{order.delivery_driver_note}</span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between text-xs">
                                             <span className="text-primary/50">Dibuat</span>
                                             <span className="font-bold text-primary">
