@@ -80,7 +80,7 @@ export default function AnalyticsPage() {
         }
     };
 
-    const availableDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort();
+    const availableDates = Array.from(new Set(orders.map(o => o.pickup_date))).sort().reverse(); // newest first, like /orders
     const effectiveEnd = rangeEnd ?? rangeStart;
     // "Semua" = valid sales only: unpaid and cancelled orders are not counted (pick their chip to see them).
     const matchStatus = (o: Order) => activeStatus === 'ALL' ? !EXCLUDED_FROM_SALES.includes(o.status) : o.status === activeStatus;

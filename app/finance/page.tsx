@@ -89,8 +89,8 @@ export default function FinancePage() {
 
     const doneOrders = orders.filter(o => o.status === 'DONE' && (storeFilter === null || o.store_id === storeFilter));
 
-    // Unique dates sorted ASC
-    const uniqueDates = Array.from(new Set(doneOrders.map(o => o.pickup_date))).sort();
+    // Unique dates, newest first (like /orders)
+    const uniqueDates = Array.from(new Set(doneOrders.map(o => o.pickup_date))).sort().reverse();
 
     // Filtered by selected date + payment method
     const filtered = doneOrders.filter(o => {

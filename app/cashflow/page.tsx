@@ -168,11 +168,11 @@ export default function CashflowPage() {
     // Per store: that store's expenses only (general ones only show under "Semua"), like /summary.
     const storeExpenses = storeFilter === null ? expenses : expenses.filter(e => e.store_id === storeFilter);
 
-    // All unique dates from both sources
+    // All unique dates from both sources, newest first (like /orders)
     const allDates = Array.from(new Set([
         ...doneOrders.map(o => o.pickup_date),
         ...storeExpenses.map(e => e.date),
-    ])).sort();
+    ])).sort().reverse();
 
     // Filtered by date
     const filteredOrders = activeDate === 'ALL' ? doneOrders : doneOrders.filter(o => o.pickup_date === activeDate);
