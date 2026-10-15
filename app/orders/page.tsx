@@ -786,7 +786,8 @@ export default function OrdersPage() {
                                                     {/* DOKU replaces QRIS while DOKU_PAYMENT is on; an order's current method always stays listed. */}
                                                     {(!dokuEnabled || order.payment_method === 'QRIS') && <option value="QRIS">QRIS</option>}
                                                     {(dokuEnabled || order.payment_method === 'DOKU') && <option value="DOKU">DOKU</option>}
-                                                    <option value="CASH">Cash</option>
+                                                    {/* Store Delivery can't be paid in cash; an order's current method always stays listed. */}
+                                                    {(order.delivery_method !== 'store_delivery' || order.payment_method === 'CASH') && <option value="CASH">Cash</option>}
                                                 </select>
                                                 <LuChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" />
                                             </div>
@@ -1346,7 +1347,7 @@ export default function OrdersPage() {
                                             <option value="TRANSFER">Transfer</option>
                                             {(!dokuEnabled || form.payment_method === 'QRIS') && <option value="QRIS">QRIS</option>}
                                             {(dokuEnabled || form.payment_method === 'DOKU') && <option value="DOKU">QRIS (DOKU)</option>}
-                                            <option value="CASH">Cash</option>
+                                            {(editingOrder?.delivery_method !== 'store_delivery' || form.payment_method === 'CASH') && <option value="CASH">Cash</option>}
                                         </select>
                                         <LuChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-primary/40" />
                                     </div>

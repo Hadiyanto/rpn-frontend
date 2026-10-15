@@ -178,6 +178,11 @@ export default function OrderPage() {
     const shippingFee = deliveryMethod === 'store_delivery' ? selectedCourier?.price ?? null : null;
     // Store delivery: the date/time is when the store ships the order, not when it is picked up.
     const isStoreDelivery = deliveryMethod === 'store_delivery';
+
+    // The store's courier can't collect cash: drop a Tunai choice when switching to Store Delivery.
+    useEffect(() => {
+        if (isStoreDelivery && form.payment_method === 'CASH') setForm(f => ({ ...f, payment_method: '' }));
+    }, [isStoreDelivery, form.payment_method]);
     const scheduleWord = isStoreDelivery ? 'Pengiriman' : 'Pengambilan';
 
     // Whitelist check disabled: Store Delivery is offered to every customer.
@@ -1097,7 +1102,8 @@ export default function OrderPage() {
                                         key === 'QRIS' ? !dokuEnabled && !!selectedStore?.qris_image_url
                                             : key === 'DOKU' ? dokuEnabled
                                                 : key === 'TRANSFER' ? transferEnabled
-                                                    : true
+                                                    : key === 'CASH' ? !isStoreDelivery
+                                                        : true
                                     ).map(({ key, label, desc }) => {
                                         const isSelected = form.payment_method === key;
                                         return (
